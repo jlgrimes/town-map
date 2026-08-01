@@ -360,7 +360,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [homeDraft, setHomeDraft] = useState("");
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
   const [preferenceStatus, setPreferenceStatus] = useState<"idle" | "loading" | "ready" | "saving" | "error">("idle");
-  const [placeQuery, setPlaceQuery] = useState("");
+  const [placeQuery, setPlaceQuery] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [radiusMiles, setRadiusMiles] = useState(initialNumber("radius", 25));
   const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "locating">("idle");
@@ -384,6 +384,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         setHomeAddress(preferences.homeAddress);
         setHomeLocation(null);
         setHomeDraft(preferences.homeAddress ?? "");
+        if (preferences.homeAddress && !initialHasLocationOverride) setPlaceQuery(preferences.homeAddress);
         setPreferenceStatus("ready");
         if (preferences.homeAddress && !initialHasLocationOverride) {
           try {
@@ -490,7 +491,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
       setLocationAddress(result.address);
-      setPlaceQuery("");
+      setPlaceQuery(normalized);
     } catch {
       setLocationNotice("Place search is temporarily unavailable. You can still use your current location.");
     } finally {
@@ -511,6 +512,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       setLocationLabel("Current location");
       setLocationAddress(null);
+      setPlaceQuery("Current location");
     } catch {
       setLocationNotice("We could not access your location. Enter a city or ZIP code instead.");
     } finally {
@@ -551,9 +553,10 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
       setLocationAddress(normalized);
+      setPlaceQuery(normalized);
       setLocationNotice(null);
     } catch {
-      setLocationNotice("Home saved. We couldn't locate it right now, but you can retry with Go home.");
+      setLocationNotice("Home saved. We couldn't locate it right now, but it remains your default.");
     }
   }
 
@@ -580,6 +583,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     setLocation({ latitude: result.latitude, longitude: result.longitude });
     setLocationLabel(result.label);
     setLocationAddress(homeAddress);
+    setPlaceQuery(homeAddress);
     setLocationNotice(null);
   }
 
@@ -678,15 +682,22 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
           <form onSubmit={searchPlace} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 lg:grid-cols-[minmax(13rem,1fr)_8rem_auto]">
             <div className="relative col-span-2 lg:col-span-1">
               <Label htmlFor="place-search" className="sr-only">City or ZIP code</Label>
-              <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              {isHomeLocation
+                ? <House className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                : <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />}
               <Input
                 id="place-search"
                 value={placeQuery}
                 onChange={(event) => setPlaceQuery(event.target.value)}
                 placeholder="City, state, or ZIP code"
                 autoComplete="postal-code"
-                className="h-11 pl-10"
+                className={`h-11 pl-10 ${homeAddress && !isHomeLocation ? "pr-11" : ""}`}
               />
+              {homeAddress && !isHomeLocation && (
+                <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 size-9" onClick={useHomeLocation} aria-label="Use saved home">
+                  <House />
+                </Button>
+              )}
             </div>
             <div>
               <Label htmlFor="radius" className="sr-only">Search radius</Label>
@@ -739,14 +750,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             </div>
           </div>
 
-          <div className="mt-2 flex min-h-8 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-            <span>{locationLabel} · {radiusMiles} mi</span>
-            {auth.signedIn && homeAddress && !isHomeLocation && (
-              <Button type="button" variant="ghost" size="xs" onClick={useHomeLocation}><House /> Go home</Button>
-            )}
-            {auth.signedIn && isHomeLocation && <span className="inline-flex items-center gap-1"><House className="size-3.5" /> Home</span>}
-            {locationNotice && <span role="status" className="inline-flex items-center gap-1 text-destructive"><CircleAlert className="size-3.5 shrink-0" />{locationNotice}</span>}
-          </div>
+          {locationNotice && (
+            <p role="status" className="mt-2 inline-flex items-center gap-1 text-xs text-destructive">
+              <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
+            </p>
+          )}
         </section>
 
         <section aria-labelledby="events-heading">
