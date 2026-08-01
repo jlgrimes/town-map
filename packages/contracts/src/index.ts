@@ -158,8 +158,14 @@ export const HomeLocationSchema = z.object({
 });
 export type HomeLocation = z.infer<typeof HomeLocationSchema>;
 
+export const HomeAddressSchema = z.string().trim().min(1).max(500);
+
+export const UserPreferencesUpdateSchema = z.object({
+  homeAddress: HomeAddressSchema,
+});
+
 export const UserPreferencesSchema = z.object({
-  home: HomeLocationSchema.nullable(),
+  homeAddress: HomeAddressSchema.nullable(),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 

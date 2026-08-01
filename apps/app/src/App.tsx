@@ -354,7 +354,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   });
   const [locationLabel, setLocationLabel] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [locationAddress, setLocationAddress] = useState<string | null>(null);
-  const [home, setHome] = useState<HomeLocation | null>(null);
+  const [homeAddress, setHomeAddress] = useState<string | null>(null);
+  const [homeLocation, setHomeLocation] = useState<HomeLocation | null>(null);
   const [homeEditorOpen, setHomeEditorOpen] = useState(false);
   const [homeDraft, setHomeDraft] = useState("");
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
@@ -371,21 +372,31 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   useEffect(() => {
     if (!auth.enabled || !auth.loaded) return;
     if (!auth.signedIn) {
-      setHome(null);
+      setHomeAddress(null);
+      setHomeLocation(null);
       setPreferenceStatus("idle");
       return;
     }
     const controller = new AbortController();
     setPreferenceStatus("loading");
     fetchUserPreferences(auth.getToken, controller.signal)
-      .then((preferences) => {
-        setHome(preferences.home);
-        setHomeDraft(preferences.home?.address ?? "");
+      .then(async (preferences) => {
+        setHomeAddress(preferences.homeAddress);
+        setHomeLocation(null);
+        setHomeDraft(preferences.homeAddress ?? "");
         setPreferenceStatus("ready");
-        if (preferences.home && !initialHasLocationOverride) {
-          setLocation({ latitude: preferences.home.latitude, longitude: preferences.home.longitude });
-          setLocationLabel(preferences.home.label);
-          setLocationAddress(preferences.home.address);
+        if (preferences.homeAddress && !initialHasLocationOverride) {
+          try {
+            const result = await geocodePlace(preferences.homeAddress, controller.signal);
+            if (!result || controller.signal.aborted) return;
+            setHomeLocation(result);
+            setLocation({ latitude: result.latitude, longitude: result.longitude });
+            setLocationLabel(result.label);
+            setLocationAddress(preferences.homeAddress);
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") return;
+            setLocationNotice("Your home is saved, but we couldn't locate it right now.");
+          }
         }
       })
       .catch((error: unknown) => {
@@ -507,9 +518,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     }
   }
 
-  const isHomeLocation = home !== null
-    && Math.abs(location.latitude - home.latitude) < 0.00001
-    && Math.abs(location.longitude - home.longitude) < 0.00001;
+  const isHomeLocation = homeLocation !== null
+    && Math.abs(location.latitude - homeLocation.latitude) < 0.00001
+    && Math.abs(location.longitude - homeLocation.longitude) < 0.00001;
 
   async function saveHomeAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -518,31 +529,57 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     setPreferenceStatus("saving");
     setHomeNotice(null);
     try {
-      const result = await geocodePlace(normalized);
-      if (!result) {
-        setPreferenceStatus("error");
-        setHomeNotice("We couldn't find that address. Try adding the city and state.");
-        return;
-      }
-      const preferences = await saveUserPreferences(result, auth.getToken);
-      setHome(preferences.home);
-      setHomeDraft(preferences.home?.address ?? normalized);
-      setLocation({ latitude: result.latitude, longitude: result.longitude });
-      setLocationLabel(result.label);
-      setLocationAddress(result.address);
+      const preferences = await saveUserPreferences(normalized, auth.getToken);
+      setHomeAddress(preferences.homeAddress);
+      setHomeLocation(null);
+      setHomeDraft(preferences.homeAddress ?? normalized);
       setPreferenceStatus("ready");
       setHomeEditorOpen(false);
     } catch {
       setPreferenceStatus("error");
       setHomeNotice("We couldn't save your home right now. Please try again.");
+      return;
+    }
+
+    try {
+      const result = await geocodePlace(normalized);
+      if (!result) {
+        setLocationNotice("Home saved. We couldn't locate it yet; try a city with its state or a ZIP code.");
+        return;
+      }
+      setHomeLocation(result);
+      setLocation({ latitude: result.latitude, longitude: result.longitude });
+      setLocationLabel(result.label);
+      setLocationAddress(normalized);
+      setLocationNotice(null);
+    } catch {
+      setLocationNotice("Home saved. We couldn't locate it right now, but you can retry with Go home.");
     }
   }
 
-  function useHomeLocation() {
-    if (!home) return;
-    setLocation({ latitude: home.latitude, longitude: home.longitude });
-    setLocationLabel(home.label);
-    setLocationAddress(home.address);
+  async function useHomeLocation() {
+    if (!homeAddress) return;
+    let result = homeLocation;
+    if (!result) {
+      setLocationStatus("searching");
+      setLocationNotice(null);
+      try {
+        result = await geocodePlace(homeAddress);
+        if (!result) {
+          setLocationNotice("We couldn't locate your saved home. Try updating it with a city and state.");
+          return;
+        }
+        setHomeLocation(result);
+      } catch {
+        setLocationNotice("Place search is temporarily unavailable. Your home is still saved.");
+        return;
+      } finally {
+        setLocationStatus("idle");
+      }
+    }
+    setLocation({ latitude: result.latitude, longitude: result.longitude });
+    setLocationLabel(result.label);
+    setLocationAddress(homeAddress);
     setLocationNotice(null);
   }
 
@@ -588,7 +625,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                   <Popover open={homeEditorOpen} onOpenChange={(open) => {
                     setHomeEditorOpen(open);
                     setHomeNotice(null);
-                    if (open) setHomeDraft(home?.address ?? "");
+                    if (open) setHomeDraft(homeAddress ?? "");
                   }}>
                     <PopoverTrigger asChild>
                       <Button variant="ghost" className="min-h-10 px-3">
@@ -598,7 +635,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                     <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-4">
                       <PopoverHeader>
                         <PopoverTitle>Home address</PopoverTitle>
-                        <PopoverDescription>Events will default here when you sign in. Address lookup uses OpenStreetMap.</PopoverDescription>
+                        <PopoverDescription>Saved as text and looked up when it is used for event search.</PopoverDescription>
                       </PopoverHeader>
                       <form onSubmit={saveHomeAddress} className="space-y-3">
                         <div className="space-y-1.5">
@@ -614,9 +651,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                         </div>
                         {homeNotice && <p role="status" className="text-xs text-destructive">{homeNotice}</p>}
                         <div className="flex items-center justify-between gap-3">
-                          {home ? <p className="min-w-0 truncate text-xs text-muted-foreground">Saved: {home.label}</p> : <span />}
+                          {homeAddress ? <p className="min-w-0 truncate text-xs text-muted-foreground">Saved: {homeAddress}</p> : <span />}
                           <Button type="submit" disabled={!homeDraft.trim() || preferenceStatus === "saving"}>
-                            {preferenceStatus === "saving" ? "Saving…" : home ? "Update home" : "Save home"}
+                            {preferenceStatus === "saving" ? "Saving…" : homeAddress ? "Update home" : "Save home"}
                           </Button>
                         </div>
                       </form>
@@ -704,7 +741,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
 
           <div className="mt-2 flex min-h-8 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
             <span>{locationLabel} · {radiusMiles} mi</span>
-            {auth.signedIn && home && !isHomeLocation && (
+            {auth.signedIn && homeAddress && !isHomeLocation && (
               <Button type="button" variant="ghost" size="xs" onClick={useHomeLocation}><House /> Go home</Button>
             )}
             {auth.signedIn && isHomeLocation && <span className="inline-flex items-center gap-1"><House className="size-3.5" /> Home</span>}

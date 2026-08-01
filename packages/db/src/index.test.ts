@@ -185,27 +185,19 @@ describe("listCoverage", () => {
 describe("user preferences", () => {
   it("returns an empty preference object for a new Clerk user", async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
-    await expect(getUserPreferences("user_new", { query } as never)).resolves.toEqual({ home: null });
+    await expect(getUserPreferences("user_new", { query } as never)).resolves.toEqual({ homeAddress: null });
     expect(query).toHaveBeenCalledWith(expect.stringContaining("WHERE clerk_user_id = $1"), ["user_new"]);
   });
 
-  it("upserts and returns a home location", async () => {
-    const home = {
-      address: "111 N State St, Chicago, IL 60602",
-      label: "Chicago, Illinois",
-      latitude: 41.8837,
-      longitude: -87.6278,
-    };
+  it("upserts and returns a home address", async () => {
+    const homeAddress = "111 N State St, Chicago, IL 60602";
     const query = vi.fn().mockResolvedValue({ rows: [{
-      homeAddress: home.address,
-      homeLabel: home.label,
-      homeLatitude: home.latitude,
-      homeLongitude: home.longitude,
+      homeAddress,
     }] });
 
-    await expect(saveUserPreferences("user_123", home, { query } as never)).resolves.toEqual({ home });
+    await expect(saveUserPreferences("user_123", homeAddress, { query } as never)).resolves.toEqual({ homeAddress });
     expect(query).toHaveBeenCalledWith(expect.stringContaining("ON CONFLICT (clerk_user_id)"), [
-      "user_123", home.address, home.label, home.latitude, home.longitude,
+      "user_123", homeAddress,
     ]);
   });
 });

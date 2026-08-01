@@ -45,18 +45,8 @@ describe("event API contracts", () => {
     }).success).toBe(true);
   });
 
-  it("validates persisted home locations", () => {
-    expect(UserPreferencesSchema.safeParse({ home: {
-      address: "111 N State St, Chicago, IL 60602",
-      label: "Chicago, Illinois",
-      latitude: 41.8837,
-      longitude: -87.6278,
-    } }).success).toBe(true);
-    expect(UserPreferencesSchema.safeParse({ home: {
-      address: "Chicago",
-      label: "Chicago",
-      latitude: 91,
-      longitude: -87.6278,
-    } }).success).toBe(false);
+  it("validates persisted home addresses", () => {
+    expect(UserPreferencesSchema.safeParse({ homeAddress: "111 N State St, Chicago, IL 60602" }).success).toBe(true);
+    expect(UserPreferencesSchema.safeParse({ homeAddress: "" }).success).toBe(false);
   });
 });

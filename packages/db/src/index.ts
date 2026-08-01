@@ -7,7 +7,6 @@ import type {
   EventPage,
   EventQuery,
   EventSource,
-  HomeLocation,
   NormalizedEvent,
   UserPreferences,
 } from "@town-map/contracts";
@@ -283,19 +282,11 @@ export async function listCoverage(database: Queryable = getPool()): Promise<Cov
 
 type UserPreferencesRow = {
   homeAddress: string;
-  homeLabel: string;
-  homeLatitude: number;
-  homeLongitude: number;
 };
 
 function toUserPreferences(row: UserPreferencesRow | undefined): UserPreferences {
   return {
-    home: row ? {
-      address: row.homeAddress,
-      label: row.homeLabel,
-      latitude: row.homeLatitude,
-      longitude: row.homeLongitude,
-    } : null,
+    homeAddress: row?.homeAddress ?? null,
   };
 }
 
@@ -304,8 +295,7 @@ export async function getUserPreferences(
   database: Queryable = getPool(),
 ): Promise<UserPreferences> {
   const result = await database.query<UserPreferencesRow>(
-    `SELECT home_address AS "homeAddress", home_label AS "homeLabel",
-       home_latitude AS "homeLatitude", home_longitude AS "homeLongitude"
+    `SELECT home_address AS "homeAddress"
      FROM user_preferences
      WHERE clerk_user_id = $1`,
     [clerkUserId],
@@ -315,22 +305,20 @@ export async function getUserPreferences(
 
 export async function saveUserPreferences(
   clerkUserId: string,
-  home: HomeLocation,
+  homeAddress: string,
   database: Queryable = getPool(),
 ): Promise<UserPreferences> {
   const result = await database.query<UserPreferencesRow>(
-    `INSERT INTO user_preferences (
-       clerk_user_id, home_address, home_label, home_latitude, home_longitude
-     ) VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO user_preferences (clerk_user_id, home_address)
+     VALUES ($1, $2)
      ON CONFLICT (clerk_user_id) DO UPDATE SET
        home_address = EXCLUDED.home_address,
-       home_label = EXCLUDED.home_label,
-       home_latitude = EXCLUDED.home_latitude,
-       home_longitude = EXCLUDED.home_longitude,
+       home_label = NULL,
+       home_latitude = NULL,
+       home_longitude = NULL,
        updated_at = now()
-     RETURNING home_address AS "homeAddress", home_label AS "homeLabel",
-       home_latitude AS "homeLatitude", home_longitude AS "homeLongitude"`,
-    [clerkUserId, home.address, home.label, home.latitude, home.longitude],
+     RETURNING home_address AS "homeAddress"`,
+    [clerkUserId, homeAddress],
   );
   return toUserPreferences(result.rows[0]);
 }

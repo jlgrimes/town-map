@@ -35,6 +35,7 @@ integration("regional collection leases", () => {
         "003_add_spatial_query_indexes.sql",
         "004_add_collection_regions.sql",
         "005_add_user_preferences.sql",
+        "006_store_home_as_address.sql",
       ]) {
         await firstClient.query(await readFile(`${migrationsDirectory}/${migration}`, "utf8"));
       }

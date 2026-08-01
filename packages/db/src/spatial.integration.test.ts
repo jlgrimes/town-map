@@ -19,7 +19,7 @@ integration("global-scale event lookup", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     await client.query("SELECT pg_advisory_lock(8042026)");
     try {
-      for (const migration of ["001_initial.sql", "002_add_source_url.sql", "003_add_spatial_query_indexes.sql", "004_add_collection_regions.sql", "005_add_user_preferences.sql"]) {
+      for (const migration of ["001_initial.sql", "002_add_source_url.sql", "003_add_spatial_query_indexes.sql", "004_add_collection_regions.sql", "005_add_user_preferences.sql", "006_store_home_as_address.sql"]) {
         await client.query(await readFile(`${migrationsDirectory}/${migration}`, "utf8"));
       }
     } finally {
