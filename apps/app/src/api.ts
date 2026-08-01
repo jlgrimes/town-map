@@ -21,34 +21,11 @@ export async function fetchEvents(options: {
 }
 
 export async function geocodePlace(query: string, signal?: AbortSignal) {
-  const params = new URLSearchParams({
-    q: query,
-    format: "jsonv2",
-    limit: "1",
-    addressdetails: "1",
-  });
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
+  const params = new URLSearchParams({ q: query });
+  const response = await fetch(`${API_URL}/v1/geocode?${params}`, { signal });
+  if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Location search returned ${response.status}`);
-  const results = await response.json() as Array<{
-    lat: string;
-    lon: string;
-    display_name: string;
-    name?: string;
-    address?: { city?: string; town?: string; village?: string; state?: string; postcode?: string };
-  }>;
-  const result = results[0];
-  if (!result) return null;
-  const city = result.address?.city ?? result.address?.town ?? result.address?.village ?? result.name;
-  const region = result.address?.state;
-  return {
-    latitude: Number(result.lat),
-    longitude: Number(result.lon),
-    label: [city, region].filter(Boolean).join(", ") || result.display_name.split(",").slice(0, 2).join(","),
-    address: result.display_name,
-  };
+  return response.json() as Promise<HomeLocation>;
 }
 
 async function authorizationHeaders(getToken: () => Promise<string | null>) {

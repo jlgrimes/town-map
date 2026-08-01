@@ -26,9 +26,11 @@ Prerequisites: Node.js 22+, pnpm 9+, and PostgreSQL 15+.
 
 The app runs at `http://localhost:5173`; the API runs at `http://localhost:3001`. In development, the app displays clearly labeled preview events when the API or database is unavailable.
 
-The read API exposes `GET /v1/events`, `GET /v1/games`, and `GET /v1/coverage`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details.
+The read API exposes `GET /v1/events`, `GET /v1/games`, `GET /v1/coverage`, and `GET /v1/geocode`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details.
 
 Signed-in users can persist a home address through `GET /v1/preferences` and `PUT /v1/preferences`. The routes require a Clerk session token; the browser sends it as a bearer token. A saved home becomes the default search location unless the incoming URL already contains explicit coordinates.
+
+Place searches run through the API's configurable `GEOCODER_URL`. The default OpenStreetMap Nominatim integration identifies Town Map, serializes requests below one per second, and caches repeated results for 24 hours in each API instance. Review the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) before changing this integration or scaling traffic.
 
 ## Collector checks
 

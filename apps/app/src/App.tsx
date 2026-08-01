@@ -598,7 +598,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                     <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-4">
                       <PopoverHeader>
                         <PopoverTitle>Home address</PopoverTitle>
-                        <PopoverDescription>Events will default to this location when you sign in.</PopoverDescription>
+                        <PopoverDescription>Events will default here when you sign in. Address lookup uses OpenStreetMap.</PopoverDescription>
                       </PopoverHeader>
                       <form onSubmit={saveHomeAddress} className="space-y-3">
                         <div className="space-y-1.5">
