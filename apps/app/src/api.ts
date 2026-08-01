@@ -1,4 +1,4 @@
-import type { EventPage, Game } from "@town-map/contracts";
+import type { EventPage, Game, HomeLocation, UserPreferences } from "@town-map/contracts";
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 
@@ -47,5 +47,40 @@ export async function geocodePlace(query: string, signal?: AbortSignal) {
     latitude: Number(result.lat),
     longitude: Number(result.lon),
     label: [city, region].filter(Boolean).join(", ") || result.display_name.split(",").slice(0, 2).join(","),
+    address: result.display_name,
   };
+}
+
+async function authorizationHeaders(getToken: () => Promise<string | null>) {
+  const token = await getToken();
+  if (!token) throw new Error("No active Clerk session");
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+}
+
+export async function fetchUserPreferences(
+  getToken: () => Promise<string | null>,
+  signal?: AbortSignal,
+) {
+  const response = await fetch(`${API_URL}/v1/preferences`, {
+    headers: await authorizationHeaders(getToken),
+    signal,
+  });
+  if (!response.ok) throw new Error(`Preferences API returned ${response.status}`);
+  return response.json() as Promise<UserPreferences>;
+}
+
+export async function saveUserPreferences(
+  home: HomeLocation,
+  getToken: () => Promise<string | null>,
+) {
+  const response = await fetch(`${API_URL}/v1/preferences`, {
+    method: "PUT",
+    headers: await authorizationHeaders(getToken),
+    body: JSON.stringify(home),
+  });
+  if (!response.ok) throw new Error(`Preferences API returned ${response.status}`);
+  return response.json() as Promise<UserPreferences>;
 }

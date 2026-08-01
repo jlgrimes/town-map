@@ -11,6 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@clerk/fastify": "^3.1.59",
     "@fastify/cors": "11.3.0",
     "@town-map/contracts": "workspace:*",
     "@town-map/db": "workspace:*",

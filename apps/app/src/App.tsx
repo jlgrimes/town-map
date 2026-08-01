@@ -1,4 +1,5 @@
 import { Geolocation } from "@capacitor/geolocation";
+import { SignInButton, UserButton } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -18,11 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { GAME_LABELS, type EventListItem, type Game } from "@town-map/contracts";
+import { GAME_LABELS, type EventListItem, type Game, type HomeLocation } from "@town-map/contracts";
 import {
   ChevronDown,
   CircleAlert,
   ExternalLink,
+  House,
   List,
   LocateFixed,
   Map as MapIcon,
@@ -33,7 +35,7 @@ import {
   X,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { fetchEvents, geocodePlace } from "./api";
+import { fetchEvents, fetchUserPreferences, geocodePlace, saveUserPreferences } from "./api";
 import { demoEvents } from "./demo-events";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
@@ -81,6 +83,21 @@ const META_LABELS: Record<string, string> = {
 };
 
 const initialParams = new URLSearchParams(window.location.search);
+const initialHasLocationOverride = initialParams.has("lat") && initialParams.has("lng");
+
+export type AppAuth = {
+  enabled: boolean;
+  loaded: boolean;
+  signedIn: boolean;
+  getToken: () => Promise<string | null>;
+};
+
+const guestAuth: AppAuth = {
+  enabled: false,
+  loaded: true,
+  signedIn: false,
+  getToken: async () => null,
+};
 
 function initialGames() {
   const requested = initialParams.get("games")?.split(",").filter((game): game is Game => ALL_GAMES.includes(game as Game));
@@ -317,7 +334,7 @@ function LoadingCards() {
   );
 }
 
-export function App() {
+export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [selectedGames, setSelectedGames] = useState<Game[]>(initialGames);
   const [events, setEvents] = useState<EventListItem[]>([]);
   const [query, setQuery] = useState(initialParams.get("q") ?? "");
@@ -329,6 +346,9 @@ export function App() {
     longitude: initialNumber("lng", -87.6298),
   });
   const [locationLabel, setLocationLabel] = useState(initialParams.get("place") ?? "Chicago, IL");
+  const [locationAddress, setLocationAddress] = useState<string | null>(null);
+  const [home, setHome] = useState<HomeLocation | null>(null);
+  const [preferenceStatus, setPreferenceStatus] = useState<"idle" | "loading" | "ready" | "saving" | "error">("idle");
   const [placeQuery, setPlaceQuery] = useState("");
   const [radiusMiles, setRadiusMiles] = useState(initialNumber("radius", 25));
   const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
@@ -337,6 +357,32 @@ export function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!auth.enabled || !auth.loaded) return;
+    if (!auth.signedIn) {
+      setHome(null);
+      setPreferenceStatus("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setPreferenceStatus("loading");
+    fetchUserPreferences(auth.getToken, controller.signal)
+      .then((preferences) => {
+        setHome(preferences.home);
+        setPreferenceStatus("ready");
+        if (preferences.home && !initialHasLocationOverride) {
+          setLocation({ latitude: preferences.home.latitude, longitude: preferences.home.longitude });
+          setLocationLabel(preferences.home.label);
+          setLocationAddress(preferences.home.address);
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPreferenceStatus("error");
+      });
+    return () => controller.abort();
+  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn]);
 
   useEffect(() => {
     if (selectedGames.length === 0) {
@@ -421,6 +467,7 @@ export function App() {
       }
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
+      setLocationAddress(result.address);
       setPlaceQuery("");
     } catch {
       setLocationNotice("Place search is temporarily unavailable. You can still use your current location.");
@@ -441,11 +488,43 @@ export function App() {
       const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 12_000 });
       setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       setLocationLabel("Current location");
+      setLocationAddress(null);
     } catch {
       setLocationNotice("We could not access your location. Enter a city or ZIP code instead.");
     } finally {
       setLocationStatus("idle");
     }
+  }
+
+  const isHomeLocation = home !== null
+    && Math.abs(location.latitude - home.latitude) < 0.00001
+    && Math.abs(location.longitude - home.longitude) < 0.00001;
+
+  async function setCurrentLocationAsHome() {
+    if (!locationAddress || !auth.signedIn) return;
+    setPreferenceStatus("saving");
+    setLocationNotice(null);
+    try {
+      const preferences = await saveUserPreferences({
+        address: locationAddress,
+        label: locationLabel,
+        latitude: location.latitude,
+        longitude: location.longitude,
+      }, auth.getToken);
+      setHome(preferences.home);
+      setPreferenceStatus("ready");
+    } catch {
+      setPreferenceStatus("error");
+      setLocationNotice("We could not save your home right now.");
+    }
+  }
+
+  function useHomeLocation() {
+    if (!home) return;
+    setLocation({ latitude: home.latitude, longitude: home.longitude });
+    setLocationLabel(home.label);
+    setLocationAddress(home.address);
+    setLocationNotice(null);
   }
 
   const handleMapSelect = useCallback((eventId: string) => {
@@ -483,6 +562,17 @@ export function App() {
             <img src="/town-map.png" alt="" className="size-8 object-contain" />
             <span>Town Map</span>
           </a>
+          {auth.enabled && auth.loaded && (
+            <div className="ml-auto flex items-center">
+              {auth.signedIn ? (
+                <UserButton />
+              ) : (
+                <SignInButton mode="modal">
+                  <Button variant="ghost" className="min-h-10 px-3">Sign in</Button>
+                </SignInButton>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -554,9 +644,18 @@ export function App() {
             </div>
           </div>
 
-          <div className="mt-2 flex min-h-6 items-center text-xs text-muted-foreground">
+          <div className="mt-2 flex min-h-8 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
             <span>{locationLabel} · {radiusMiles} mi</span>
-            {locationNotice && <span role="status" className="ml-3 inline-flex items-center gap-1 text-destructive"><CircleAlert className="size-3.5 shrink-0" />{locationNotice}</span>}
+            {auth.signedIn && home && !isHomeLocation && (
+              <Button type="button" variant="ghost" size="xs" onClick={useHomeLocation}><House /> Go home</Button>
+            )}
+            {auth.signedIn && locationAddress && !isHomeLocation && (
+              <Button type="button" variant="ghost" size="xs" onClick={setCurrentLocationAsHome} disabled={preferenceStatus === "saving"}>
+                <House /> {preferenceStatus === "saving" ? "Saving…" : "Set as home"}
+              </Button>
+            )}
+            {auth.signedIn && isHomeLocation && <span className="inline-flex items-center gap-1"><House className="size-3.5" /> Home</span>}
+            {locationNotice && <span role="status" className="inline-flex items-center gap-1 text-destructive"><CircleAlert className="size-3.5 shrink-0" />{locationNotice}</span>}
           </div>
         </section>
 

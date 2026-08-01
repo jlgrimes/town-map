@@ -1,7 +1,16 @@
 import cors from "@fastify/cors";
-import { EventQuerySchema, GAME_LABELS, GameSchema } from "@town-map/contracts";
-import { closePool, getPool, InvalidEventCursorError, listCoverage, listEvents } from "@town-map/db";
-import Fastify from "fastify";
+import { clerkPlugin, getAuth } from "@clerk/fastify";
+import { EventQuerySchema, GAME_LABELS, GameSchema, HomeLocationSchema } from "@town-map/contracts";
+import {
+  closePool,
+  getPool,
+  getUserPreferences,
+  InvalidEventCursorError,
+  listCoverage,
+  listEvents,
+  saveUserPreferences,
+} from "@town-map/db";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 
 const app = Fastify({ logger: true });
 const configuredOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:5173")
@@ -9,6 +18,7 @@ const configuredOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:5173")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const nativeOrigins = new Set(["capacitor://localhost", "http://localhost", "https://localhost"]);
+const clerkConfigured = Boolean(process.env.CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY);
 
 await app.register(cors, {
   origin(origin, callback) {
@@ -16,6 +26,26 @@ await app.register(cors, {
     else callback(new Error("Origin is not allowed"), false);
   },
 });
+
+if (clerkConfigured) {
+  await app.register(clerkPlugin, {
+    publishableKey: process.env.CLERK_PUBLISHABLE_KEY!,
+    secretKey: process.env.CLERK_SECRET_KEY!,
+  });
+}
+
+function authenticatedUserId(request: FastifyRequest, reply: FastifyReply) {
+  if (!clerkConfigured) {
+    reply.code(503).send({ error: "Authentication is not configured." });
+    return null;
+  }
+  const auth = getAuth(request, { acceptsToken: "session_token" });
+  if (!auth.isAuthenticated || !auth.userId) {
+    reply.code(401).send({ error: "Authentication is required." });
+    return null;
+  }
+  return auth.userId;
+}
 
 app.get("/health", async (_request, reply) => {
   if (!process.env.DATABASE_URL) {
@@ -38,6 +68,22 @@ app.get("/v1/coverage", async (_request, reply) => {
     return reply.code(503).send({ error: "The event database is not configured." });
   }
   return listCoverage();
+});
+
+app.get("/v1/preferences", async (request, reply) => {
+  const userId = authenticatedUserId(request, reply);
+  if (!userId) return;
+  return getUserPreferences(userId);
+});
+
+app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
+  const userId = authenticatedUserId(request, reply);
+  if (!userId) return;
+  const parsed = HomeLocationSchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: "Invalid home location", details: parsed.error.flatten() });
+  }
+  return saveUserPreferences(userId, parsed.data);
 });
 
 app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {

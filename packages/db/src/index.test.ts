@@ -1,7 +1,7 @@
 import type { EventQuery } from "@town-map/contracts";
 import type { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { InvalidEventCursorError, listCoverage, listEvents } from "./index.js";
+import { getUserPreferences, InvalidEventCursorError, listCoverage, listEvents, saveUserPreferences } from "./index.js";
 
 const ids = [
   "10000000-0000-4000-8000-000000000001",
@@ -179,6 +179,34 @@ describe("listCoverage", () => {
       upcomingEvents: 42,
     })]);
     expect(JSON.stringify(result)).not.toContain("config");
+  });
+});
+
+describe("user preferences", () => {
+  it("returns an empty preference object for a new Clerk user", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await expect(getUserPreferences("user_new", { query } as never)).resolves.toEqual({ home: null });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("WHERE clerk_user_id = $1"), ["user_new"]);
+  });
+
+  it("upserts and returns a home location", async () => {
+    const home = {
+      address: "111 N State St, Chicago, IL 60602",
+      label: "Chicago, Illinois",
+      latitude: 41.8837,
+      longitude: -87.6278,
+    };
+    const query = vi.fn().mockResolvedValue({ rows: [{
+      homeAddress: home.address,
+      homeLabel: home.label,
+      homeLatitude: home.latitude,
+      homeLongitude: home.longitude,
+    }] });
+
+    await expect(saveUserPreferences("user_123", home, { query } as never)).resolves.toEqual({ home });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("ON CONFLICT (clerk_user_id)"), [
+      "user_123", home.address, home.label, home.latitude, home.longitude,
+    ]);
   });
 });
 

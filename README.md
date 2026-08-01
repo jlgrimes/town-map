@@ -28,6 +28,8 @@ The app runs at `http://localhost:5173`; the API runs at `http://localhost:3001`
 
 The read API exposes `GET /v1/events`, `GET /v1/games`, and `GET /v1/coverage`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details.
 
+Signed-in users can persist a home address through `GET /v1/preferences` and `PUT /v1/preferences`. The routes require a Clerk session token; the browser sends it as a bearer token. A saved home becomes the default search location unless the incoming URL already contains explicit coordinates.
+
 ## Collector checks
 
 Collectors use dry-run mode automatically when `DATABASE_URL` is absent:
@@ -62,6 +64,7 @@ Create a Vercel project from the repository root. The root `vercel.json` builds 
 ```text
 VITE_API_URL=https://your-api.up.railway.app
 VITE_DEMO_MODE=false
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_your_key
 ```
 
 The root `vercel.json` supplies the monorepo build settings and SPA route fallback.
@@ -78,6 +81,8 @@ Create one PostgreSQL database and four services from the same repository. Keep 
 | Pokémon cron | `/services/ingest-pokemon/railway.toml` |
 
 Expose only the API service publicly. Give the API and all collectors the same `DATABASE_URL` reference variable. Configure `CORS_ORIGINS` on the API with the production and preview Vercel origins.
+
+Set `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` on the API service. Set the matching `VITE_CLERK_PUBLISHABLE_KEY` on Vercel. Enable Google in Clerk's SSO connections. Clerk development instances can use shared Google credentials; production requires a production Clerk instance plus custom Google OAuth credentials and an authorized redirect URI. Home addresses are private account data stored in PostgreSQL and are never returned by public endpoints.
 
 The three collector services wake on staggered hourly schedules, but each configured region has its own six-hour default cadence in PostgreSQL. A worker atomically leases only due regions, records per-region freshness and failures, and safely retries expired leases. This makes scheduler checks cheap while keeping upstream request volume conservative. Run each collector manually once in Railway before relying on its cron, and monitor `collection_regions` and `sync_runs`.
 

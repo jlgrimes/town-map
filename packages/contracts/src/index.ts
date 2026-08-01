@@ -150,6 +150,19 @@ export const CoverageResponseSchema = z.object({
 });
 export type CoverageResponse = z.infer<typeof CoverageResponseSchema>;
 
+export const HomeLocationSchema = z.object({
+  address: z.string().trim().min(1).max(500),
+  label: z.string().trim().min(1).max(200),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+export type HomeLocation = z.infer<typeof HomeLocationSchema>;
+
+export const UserPreferencesSchema = z.object({
+  home: HomeLocationSchema.nullable(),
+});
+export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
+
 export const GAME_LABELS: Record<Game, string> = {
   pokemon: "Pokémon",
   magic: "Magic",

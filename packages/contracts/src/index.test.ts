@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CoverageResponseSchema, EventPageSchema, EventQuerySchema } from "./index.js";
+import { CoverageResponseSchema, EventPageSchema, EventQuerySchema, UserPreferencesSchema } from "./index.js";
 
 describe("event API contracts", () => {
   it("requires latitude and longitude together", () => {
@@ -43,5 +43,20 @@ describe("event API contracts", () => {
         lastFailureAt: null,
       }],
     }).success).toBe(true);
+  });
+
+  it("validates persisted home locations", () => {
+    expect(UserPreferencesSchema.safeParse({ home: {
+      address: "111 N State St, Chicago, IL 60602",
+      label: "Chicago, Illinois",
+      latitude: 41.8837,
+      longitude: -87.6278,
+    } }).success).toBe(true);
+    expect(UserPreferencesSchema.safeParse({ home: {
+      address: "Chicago",
+      label: "Chicago",
+      latitude: 91,
+      longitude: -87.6278,
+    } }).success).toBe(false);
   });
 });
