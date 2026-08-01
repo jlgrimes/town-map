@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runCollector } from "@town-map/ingestion";
+import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { parse } from "csv-parse/sync";
 import { normalizePokemonEvent, type PokedataEvent } from "./normalize.js";
 
@@ -10,6 +10,18 @@ function countries() {
     .map((country) => country.trim().toUpperCase())
     .filter(Boolean);
   return configured?.length ? configured : [""];
+}
+
+type PokemonRegion = { country: string };
+
+function regions(): RegionalCollectionDefinition<PokemonRegion>[] {
+  return countries().map((country) => ({
+    key: country || "worldwide",
+    label: country || "Worldwide",
+    countryCode: country || null,
+    cadenceMinutes: Number(process.env.COLLECTOR_REGION_CADENCE_MINUTES ?? 360),
+    config: { country },
+  }));
 }
 
 function requestBody(country: string) {
@@ -65,20 +77,18 @@ async function download(country: string): Promise<PokedataEvent[]> {
   }) as PokedataEvent[];
 }
 
-export async function collectPokemonEvents(): Promise<NormalizedEvent[]> {
+export async function collectPokemonRegion(country: string): Promise<NormalizedEvent[]> {
   const unique = new Map<string, NormalizedEvent>();
-  for (const country of countries()) {
-    const rows = await download(country);
-    for (const row of rows) {
-      const event = normalizePokemonEvent(row);
-      unique.set(event.sourceEventId, event);
-    }
+  const rows = await download(country);
+  for (const row of rows) {
+    const event = normalizePokemonEvent(row);
+    unique.set(event.sourceEventId, event);
   }
   if (!unique.size) throw new Error("Pokedata returned no upcoming Pokémon TCG events");
   return [...unique.values()];
 }
 
-runCollector("pokedata-events", collectPokemonEvents)
+runRegionalCollector("pokedata-events", regions(), (region) => collectPokemonRegion(region.config.country))
   .then((result) => console.info("Pokémon sync complete", result))
   .catch((error) => {
     console.error(error);

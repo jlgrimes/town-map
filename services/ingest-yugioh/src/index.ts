@@ -1,11 +1,23 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runCollector } from "@town-map/ingestion";
+import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeYugiohEvent, type KonamiTournament } from "./normalize.js";
 
 const ENDPOINT = "https://cardgame-network.konami.net/mt/user/rest/tournament/US/tournament_gsearch";
 
 function states() {
   return (process.env.YUGIOH_STATES ?? "IL").split(",").map((state) => state.trim().toUpperCase()).filter(Boolean);
+}
+
+type YugiohRegion = { stateCode: string };
+
+function regions(): RegionalCollectionDefinition<YugiohRegion>[] {
+  return states().map((stateCode) => ({
+    key: `US:${stateCode}`,
+    label: `United States — ${stateCode}`,
+    countryCode: "US",
+    cadenceMinutes: Number(process.env.COLLECTOR_REGION_CADENCE_MINUTES ?? 360),
+    config: { stateCode },
+  }));
 }
 
 async function searchState(stateCode: string): Promise<KonamiTournament[]> {
@@ -57,20 +69,18 @@ async function searchState(stateCode: string): Promise<KonamiTournament[]> {
   return body.result ?? [];
 }
 
-export async function collectYugiohEvents(): Promise<NormalizedEvent[]> {
+export async function collectYugiohRegion(state: string): Promise<NormalizedEvent[]> {
   const unique = new Map<string, NormalizedEvent>();
-  for (const state of states()) {
-    const results = await searchState(state);
-    for (const event of results) {
-      if (/MASTER DUEL|DUEL LINKS|Legacy of the Duelist/i.test(`${event.eventName ?? ""} ${event.tournamentName}`)) continue;
-      if (event.tournamentStatus === "TOURNAMENT_FINISH" || event.tournamentDate < Date.now() - 7_200_000) continue;
-      unique.set(event.tournamentNo, normalizeYugiohEvent(event));
-    }
+  const results = await searchState(state);
+  for (const event of results) {
+    if (/MASTER DUEL|DUEL LINKS|Legacy of the Duelist/i.test(`${event.eventName ?? ""} ${event.tournamentName}`)) continue;
+    if (event.tournamentStatus === "TOURNAMENT_FINISH" || event.tournamentDate < Date.now() - 7_200_000) continue;
+    unique.set(event.tournamentNo, normalizeYugiohEvent(event));
   }
   return [...unique.values()];
 }
 
-runCollector("konami-kcgn", collectYugiohEvents)
+runRegionalCollector("konami-kcgn", regions(), (region) => collectYugiohRegion(region.config.stateCode))
   .then((result) => console.info("Yu-Gi-Oh! sync complete", result))
   .catch((error) => {
     console.error(error);

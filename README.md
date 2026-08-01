@@ -77,9 +77,11 @@ Create one PostgreSQL database and four services from the same repository. Keep 
 
 Expose only the API service publicly. Give the API and all collectors the same `DATABASE_URL` reference variable. Configure `CORS_ORIGINS` on the API with the production and preview Vercel origins.
 
-The three collector configs use staggered six-hour schedules. Run each one manually once in Railway before relying on its cron, and monitor sync failures and source runtimes.
+The three collector services wake on staggered hourly schedules, but each configured region has its own six-hour default cadence in PostgreSQL. A worker atomically leases only due regions, records per-region freshness and failures, and safely retries expired leases. This makes scheduler checks cheap while keeping upstream request volume conservative. Run each collector manually once in Railway before relying on its cron, and monitor `collection_regions` and `sync_runs`.
 
-Start with `YUGIOH_STATES=IL` and the example Chicago Magic search center. Expand coverage deliberately after measuring source runtime and request volume. Multiple Magic centers can be passed in `MAGIC_SEARCH_CENTERS_JSON`; Yu-Gi-Oh! accepts comma-separated postal abbreviations in `YUGIOH_STATES`. Pokémon defaults to worldwide competitive TCG coverage; `POKEMON_COUNTRIES=US,CA` can bound it to selected countries.
+Start with `YUGIOH_STATES=IL` and the example Chicago Magic search center. Expand coverage deliberately after measuring source runtime and request volume. Multiple Magic centers can be passed in `MAGIC_SEARCH_CENTERS_JSON`; Yu-Gi-Oh! accepts comma-separated postal abbreviations in `YUGIOH_STATES`. Pokémon defaults to one worldwide competitive-TCG region; `POKEMON_COUNTRIES=US,CA` splits it into bounded country regions. Removing a configured region disables future jobs for it without deleting previously collected events.
+
+Tune regional scheduling with `COLLECTOR_REGION_CADENCE_MINUTES`, cap work per wake-up with `COLLECTOR_JOB_LIMIT`, and set lease/retry behavior with `COLLECTOR_LEASE_MINUTES` and `COLLECTOR_RETRY_MINUTES`. Do not expand the region lists until request budgets and source permission are understood.
 
 Before production-scale collection, review each source's terms, identify the application in its user agent, keep the schedules conservative, and pursue official permission where appropriate.
 
@@ -91,7 +93,7 @@ pnpm test
 pnpm build
 ```
 
-The database package also has an opt-in global-scale spatial integration test. It creates and removes an isolated schema, seeds 100,000 venues and events, verifies radius correctness, and confirms a coordinate index is used:
+The database package also has opt-in integration tests for global-scale spatial search and regional job coordination. They create and remove isolated schemas, seed 100,000 venues and events, verify radius correctness and index usage, and exercise concurrent leases and crash recovery:
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/town_map_test \

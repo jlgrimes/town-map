@@ -17,8 +17,13 @@ integration("global-scale event lookup", () => {
     await client.connect();
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema}, public`);
-    for (const migration of ["001_initial.sql", "002_add_source_url.sql", "003_add_spatial_query_indexes.sql"]) {
-      await client.query(await readFile(`${migrationsDirectory}/${migration}`, "utf8"));
+    await client.query("SELECT pg_advisory_lock(8042026)");
+    try {
+      for (const migration of ["001_initial.sql", "002_add_source_url.sql", "003_add_spatial_query_indexes.sql", "004_add_collection_regions.sql"]) {
+        await client.query(await readFile(`${migrationsDirectory}/${migration}`, "utf8"));
+      }
+    } finally {
+      await client.query("SELECT pg_advisory_unlock(8042026)");
     }
 
     await client.query(`

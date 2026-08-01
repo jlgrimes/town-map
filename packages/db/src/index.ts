@@ -1,5 +1,5 @@
 import type { EventListItem, EventPage, EventQuery, EventSource, NormalizedEvent } from "@town-map/contracts";
-import { Pool, type PoolClient } from "pg";
+import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 let pool: Pool | undefined;
 
@@ -15,10 +15,156 @@ export async function closePool() {
   pool = undefined;
 }
 
-export async function beginSync(source: EventSource): Promise<string> {
-  const result = await getPool().query<{ id: string }>(
-    "INSERT INTO sync_runs (source) VALUES ($1) RETURNING id",
-    [source],
+type Queryable = {
+  query<T extends QueryResultRow = QueryResultRow>(text: string, values?: unknown[]): Promise<{ rows: T[]; rowCount: number | null }>;
+};
+
+export type CollectionRegionDefinition = {
+  key: string;
+  label: string;
+  countryCode?: string | null;
+  config: Record<string, unknown>;
+  enabled?: boolean;
+  priority?: number;
+  cadenceMinutes?: number;
+};
+
+export type ClaimedCollectionRegion = {
+  id: string;
+  source: EventSource;
+  key: string;
+  label: string;
+  countryCode: string | null;
+  config: Record<string, unknown>;
+  cadenceMinutes: number;
+};
+
+type CollectionRegionRow = {
+  id: string;
+  source: EventSource;
+  regionKey: string;
+  label: string;
+  countryCode: string | null;
+  config: Record<string, unknown>;
+  cadenceMinutes: number;
+};
+
+export async function registerCollectionRegions(
+  source: EventSource,
+  regions: CollectionRegionDefinition[],
+  database: Queryable = getPool(),
+) {
+  if (!regions.length) return;
+  await database.query(
+    `INSERT INTO collection_regions (
+       source, region_key, label, country_code, config, enabled, priority, cadence_minutes
+     )
+     SELECT $1, definition.region_key, definition.label, definition.country_code,
+       definition.config, definition.enabled, definition.priority, definition.cadence_minutes
+     FROM jsonb_to_recordset($2::jsonb) AS definition(
+       region_key text, label text, country_code text, config jsonb,
+       enabled boolean, priority integer, cadence_minutes integer
+     )
+     ON CONFLICT (source, region_key) DO UPDATE SET
+       label = EXCLUDED.label,
+       country_code = EXCLUDED.country_code,
+       config = EXCLUDED.config,
+       enabled = EXCLUDED.enabled,
+       priority = EXCLUDED.priority,
+       cadence_minutes = EXCLUDED.cadence_minutes,
+       updated_at = now()`,
+    [source, JSON.stringify(regions.map((region) => ({
+      region_key: region.key,
+      label: region.label,
+      country_code: region.countryCode ?? null,
+      config: region.config,
+      enabled: region.enabled ?? true,
+      priority: region.priority ?? 100,
+      cadence_minutes: region.cadenceMinutes ?? 360,
+    })))],
+  );
+  await database.query(
+    `UPDATE collection_regions
+     SET enabled = false, updated_at = now()
+     WHERE source = $1
+       AND NOT (region_key = ANY($2::text[]))`,
+    [source, regions.map((region) => region.key)],
+  );
+}
+
+export async function claimNextCollectionRegion(
+  source: EventSource,
+  leaseOwner: string,
+  leaseMinutes: number,
+  database: Queryable = getPool(),
+): Promise<ClaimedCollectionRegion | null> {
+  const result = await database.query<CollectionRegionRow>(
+    `WITH candidate AS (
+       SELECT id
+       FROM collection_regions
+       WHERE source = $1
+         AND enabled = true
+         AND next_run_at <= now()
+         AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+       ORDER BY priority ASC, next_run_at ASC, region_key ASC
+       FOR UPDATE SKIP LOCKED
+       LIMIT 1
+     )
+     UPDATE collection_regions AS region
+     SET lease_owner = $2,
+       lease_expires_at = now() + make_interval(mins => $3),
+       last_started_at = now(),
+       updated_at = now()
+     FROM candidate
+     WHERE region.id = candidate.id
+     RETURNING region.id, region.source, region.region_key AS "regionKey",
+       region.label, region.country_code AS "countryCode", region.config,
+       region.cadence_minutes AS "cadenceMinutes"`,
+    [source, leaseOwner, leaseMinutes],
+  );
+  const region = result.rows[0];
+  return region ? {
+    id: region.id,
+    source: region.source,
+    key: region.regionKey,
+    label: region.label,
+    countryCode: region.countryCode,
+    config: region.config,
+    cadenceMinutes: region.cadenceMinutes,
+  } : null;
+}
+
+export async function finishCollectionRegion(
+  id: string,
+  leaseOwner: string,
+  outcome: { status: "succeeded" | "failed"; error?: string; retryMinutes?: number },
+  database: Queryable = getPool(),
+) {
+  const result = await database.query(
+    `UPDATE collection_regions
+     SET lease_owner = NULL,
+       lease_expires_at = NULL,
+       next_run_at = now() + make_interval(mins => CASE WHEN $3 = 'succeeded' THEN cadence_minutes ELSE $5 END),
+       last_success_at = CASE WHEN $3 = 'succeeded' THEN now() ELSE last_success_at END,
+       last_failure_at = CASE WHEN $3 = 'failed' THEN now() ELSE last_failure_at END,
+       last_error = CASE WHEN $3 = 'failed' THEN $4 ELSE NULL END,
+       updated_at = now()
+     WHERE id = $1 AND lease_owner = $2`,
+    [id, leaseOwner, outcome.status, outcome.error ?? null, outcome.retryMinutes ?? 30],
+  );
+  if (result.rowCount !== 1) throw new Error(`Collection region ${id} is no longer leased by this worker`);
+}
+
+export async function beginSync(
+  source: EventSource,
+  region?: Pick<ClaimedCollectionRegion, "id" | "key">,
+  database: Queryable = getPool(),
+): Promise<string> {
+  const result = await database.query<{ id: string }>(
+    `INSERT INTO sync_runs (source, collection_region_id, region_key)
+     VALUES ($1, $2, $3)
+     RETURNING id`,
+    [source, region?.id ?? null, region?.key ?? null],
   );
   return result.rows[0].id;
 }
@@ -26,8 +172,9 @@ export async function beginSync(source: EventSource): Promise<string> {
 export async function finishSync(
   id: string,
   values: { status: "succeeded" | "failed"; eventsSeen: number; eventsWritten: number; error?: string },
+  database: Queryable = getPool(),
 ) {
-  await getPool().query(
+  await database.query(
     `UPDATE sync_runs
      SET status = $2, events_seen = $3, events_written = $4, error_message = $5, finished_at = now()
      WHERE id = $1`,
@@ -58,41 +205,58 @@ async function upsertVenue(client: PoolClient, source: EventSource, event: Norma
   return result.rows[0].id;
 }
 
-export async function upsertEvent(source: EventSource, event: NormalizedEvent) {
+async function upsertEventWithClient(client: PoolClient, source: EventSource, event: NormalizedEvent) {
+  const venueId = await upsertVenue(client, source, event);
+  await client.query(
+    `INSERT INTO events (
+       source, source_event_id, game, venue_id, title, description, starts_at, ends_at,
+       timezone, status, format, event_type, source_url, registration_url, price_amount,
+       price_currency, capacity, is_online, raw
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+     ON CONFLICT (source, source_event_id) DO UPDATE SET
+       game = EXCLUDED.game, venue_id = EXCLUDED.venue_id, title = EXCLUDED.title,
+       description = EXCLUDED.description, starts_at = EXCLUDED.starts_at,
+       ends_at = EXCLUDED.ends_at, timezone = EXCLUDED.timezone, status = EXCLUDED.status,
+       format = EXCLUDED.format, event_type = EXCLUDED.event_type,
+       source_url = EXCLUDED.source_url, registration_url = EXCLUDED.registration_url,
+       price_amount = EXCLUDED.price_amount,
+       price_currency = EXCLUDED.price_currency, capacity = EXCLUDED.capacity,
+       is_online = EXCLUDED.is_online, raw = EXCLUDED.raw,
+       last_seen_at = now(), updated_at = now()`,
+    [
+      source, event.sourceEventId, event.game, venueId, event.title, event.description,
+      event.startsAt, event.endsAt, event.timezone, event.status, event.format,
+      event.eventType, event.sourceUrl, event.registrationUrl, event.priceAmount, event.priceCurrency,
+      event.capacity, event.isOnline, JSON.stringify(event.raw),
+    ],
+  );
+}
+
+export async function upsertEvents(source: EventSource, events: NormalizedEvent[], batchSize = 250) {
+  if (!events.length) return 0;
   const client = await getPool().connect();
+  let written = 0;
   try {
-    await client.query("BEGIN");
-    const venueId = await upsertVenue(client, source, event);
-    await client.query(
-      `INSERT INTO events (
-         source, source_event_id, game, venue_id, title, description, starts_at, ends_at,
-         timezone, status, format, event_type, source_url, registration_url, price_amount,
-         price_currency, capacity, is_online, raw
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-       ON CONFLICT (source, source_event_id) DO UPDATE SET
-         game = EXCLUDED.game, venue_id = EXCLUDED.venue_id, title = EXCLUDED.title,
-         description = EXCLUDED.description, starts_at = EXCLUDED.starts_at,
-         ends_at = EXCLUDED.ends_at, timezone = EXCLUDED.timezone, status = EXCLUDED.status,
-         format = EXCLUDED.format, event_type = EXCLUDED.event_type,
-         source_url = EXCLUDED.source_url, registration_url = EXCLUDED.registration_url,
-         price_amount = EXCLUDED.price_amount,
-         price_currency = EXCLUDED.price_currency, capacity = EXCLUDED.capacity,
-         is_online = EXCLUDED.is_online, raw = EXCLUDED.raw,
-         last_seen_at = now(), updated_at = now()`,
-      [
-        source, event.sourceEventId, event.game, venueId, event.title, event.description,
-        event.startsAt, event.endsAt, event.timezone, event.status, event.format,
-        event.eventType, event.sourceUrl, event.registrationUrl, event.priceAmount, event.priceCurrency,
-        event.capacity, event.isOnline, JSON.stringify(event.raw),
-      ],
-    );
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
+    for (let offset = 0; offset < events.length; offset += batchSize) {
+      const batch = events.slice(offset, offset + batchSize);
+      try {
+        await client.query("BEGIN");
+        for (const event of batch) await upsertEventWithClient(client, source, event);
+        await client.query("COMMIT");
+        written += batch.length;
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    }
   } finally {
     client.release();
   }
+  return written;
+}
+
+export async function upsertEvent(source: EventSource, event: NormalizedEvent) {
+  await upsertEvents(source, [event], 1);
 }
 
 type EventRow = Omit<EventListItem, "distanceMiles" | "venue"> & {

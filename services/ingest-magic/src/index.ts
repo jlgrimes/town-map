@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runCollector } from "@town-map/ingestion";
+import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeMagicEvent, type WotcEvent } from "./normalize.js";
 
 const ENDPOINT = "https://api.tabletop.wizards.com/silverbeak-griffin-service/graphql";
@@ -16,16 +16,38 @@ const QUERY = `query queryEvents($latitude: Float!, $longitude: Float!, $maxMete
   }
 }`;
 
-type SearchCenter = { name: string; latitude: number; longitude: number; radiusMeters: number };
+type SearchCenter = {
+  key?: string;
+  name: string;
+  countryCode?: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  cadenceMinutes?: number;
+  priority?: number;
+  enabled?: boolean;
+};
 type SearchResponse = {
   data?: { searchEvents?: { events: WotcEvent[]; pageInfo: { page: number; pageSize: number; totalResults: number } } };
   errors?: Array<{ message: string }>;
 };
 
 function getCenters(): SearchCenter[] {
-  const fallback = [{ name: "Chicago", latitude: 41.8781, longitude: -87.6298, radiusMeters: 100_000 }];
+  const fallback = [{ key: "us-il-chicago", name: "Chicago", countryCode: "US", latitude: 41.8781, longitude: -87.6298, radiusMeters: 100_000 }];
   if (!process.env.MAGIC_SEARCH_CENTERS_JSON) return fallback;
   return JSON.parse(process.env.MAGIC_SEARCH_CENTERS_JSON) as SearchCenter[];
+}
+
+function regions(): RegionalCollectionDefinition<SearchCenter>[] {
+  return getCenters().map((center) => ({
+    key: center.key ?? `circle:${center.latitude.toFixed(4)}:${center.longitude.toFixed(4)}:${center.radiusMeters}`,
+    label: center.name,
+    countryCode: center.countryCode ?? null,
+    cadenceMinutes: center.cadenceMinutes ?? Number(process.env.COLLECTOR_REGION_CADENCE_MINUTES ?? 360),
+    priority: center.priority ?? 100,
+    enabled: center.enabled ?? true,
+    config: center,
+  }));
 }
 
 async function search(center: SearchCenter, page: number) {
@@ -60,26 +82,24 @@ async function search(center: SearchCenter, page: number) {
   return body.data.searchEvents;
 }
 
-export async function collectMagicEvents(): Promise<NormalizedEvent[]> {
+export async function collectMagicRegion(center: SearchCenter): Promise<NormalizedEvent[]> {
   const unique = new Map<string, NormalizedEvent>();
   const cutoff = Date.now() + 180 * 86_400_000;
-  for (const center of getCenters()) {
-    let page = 0;
-    while (page < 20) {
-      const result = await search(center, page);
-      for (const event of result.events) {
-        const normalized = normalizeMagicEvent(event);
-        const startsAt = new Date(normalized.startsAt).getTime();
-        if (startsAt >= Date.now() - 43_200_000 && startsAt <= cutoff) unique.set(normalized.sourceEventId, normalized);
-      }
-      if ((page + 1) * result.pageInfo.pageSize >= result.pageInfo.totalResults) break;
-      page += 1;
+  let page = 0;
+  while (page < 20) {
+    const result = await search(center, page);
+    for (const event of result.events) {
+      const normalized = normalizeMagicEvent(event);
+      const startsAt = new Date(normalized.startsAt).getTime();
+      if (startsAt >= Date.now() - 43_200_000 && startsAt <= cutoff) unique.set(normalized.sourceEventId, normalized);
     }
+    if ((page + 1) * result.pageInfo.pageSize >= result.pageInfo.totalResults) break;
+    page += 1;
   }
   return [...unique.values()];
 }
 
-runCollector("wotc-locator", collectMagicEvents)
+runRegionalCollector("wotc-locator", regions(), (region) => collectMagicRegion(region.config))
   .then((result) => console.info("Magic sync complete", result))
   .catch((error) => {
     console.error(error);
