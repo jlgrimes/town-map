@@ -134,35 +134,6 @@
 }
 
 @layer components {
-  .hero-grid {
-    background-color: var(--background);
-    background-image:
-      radial-gradient(circle at 82% 20%, color-mix(in oklch, var(--primary) 15%, transparent) 0, transparent 34rem),
-      linear-gradient(color-mix(in oklch, var(--border) 38%, transparent) 1px, transparent 1px),
-      linear-gradient(90deg, color-mix(in oklch, var(--border) 38%, transparent) 1px, transparent 1px);
-    background-size: auto, 2.5rem 2.5rem, 2.5rem 2.5rem;
-  }
-
-  .game-badge {
-    border-color: color-mix(in oklch, currentColor 28%, transparent);
-    font-weight: 600;
-  }
-
-  .game-pokemon {
-    background: oklch(0.965 0.055 95);
-    color: oklch(0.43 0.12 75);
-  }
-
-  .game-magic {
-    background: oklch(0.965 0.035 25);
-    color: oklch(0.48 0.17 27);
-  }
-
-  .game-yugioh {
-    background: oklch(0.96 0.04 285);
-    color: oklch(0.44 0.16 285);
-  }
-
   .town-map-marker-wrap {
     background: transparent;
     border: 0;
@@ -210,18 +181,4 @@
     color: var(--foreground);
   }
 
-  .game-pokemon {
-    background: oklch(0.3 0.06 90);
-    color: oklch(0.87 0.12 95);
-  }
-
-  .game-magic {
-    background: oklch(0.3 0.065 28);
-    color: oklch(0.84 0.11 28);
-  }
-
-  .game-yugioh {
-    background: oklch(0.29 0.07 285);
-    color: oklch(0.84 0.1 285);
-  }
 }

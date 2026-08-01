@@ -1,5 +1,4 @@
 import { Geolocation } from "@capacitor/geolocation";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -21,7 +20,6 @@ import {
 } from "@/components/ui/select";
 import { GAME_LABELS, type EventListItem, type Game } from "@town-map/contracts";
 import {
-  CalendarDays,
   ChevronDown,
   CircleAlert,
   ExternalLink,
@@ -240,10 +238,10 @@ function EventRow({ event, selected }: { event: EventListItem; selected: boolean
   return (
     <li
       id={`event-${event.id}`}
-      className={`scroll-mt-24 rounded-xl border bg-card p-4 shadow-xs transition sm:p-5 ${selected ? "border-primary ring-2 ring-primary/15" : "hover:border-foreground/20 hover:shadow-sm"}`}
+      className={`scroll-mt-4 px-1 py-5 transition-colors sm:px-2 ${selected ? "bg-muted/60" : "hover:bg-muted/25"}`}
     >
-      <article className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-x-4 gap-y-3 sm:grid-cols-[5.75rem_minmax(0,1fr)]">
-        <div className="row-span-2 border-r pr-3">
+      <article className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 sm:grid-cols-[5.5rem_minmax(0,1fr)]">
+        <div className="row-span-2">
           <time dateTime={event.startsAt} className="block text-sm font-semibold">{dateLabel(event.startsAt)}</time>
           <span className="mt-1 block text-sm tabular-nums text-muted-foreground">{timeLabel(event.startsAt)}</span>
         </div>
@@ -262,10 +260,9 @@ function EventRow({ event, selected }: { event: EventListItem; selected: boolean
               </a>
             ) : event.title}
           </h3>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <Badge className={`game-badge game-${event.game}`} variant="outline">{GAME_LABELS[event.game]}</Badge>
-            {metadata.map((value) => <span key={value}>{value}</span>)}
-          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {[GAME_LABELS[event.game], ...metadata].join(" · ")}
+          </p>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             <span className="text-foreground">{location || "Venue to be announced"}</span>
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
@@ -279,27 +276,30 @@ function EventRow({ event, selected }: { event: EventListItem; selected: boolean
           )}
         </div>
 
-        <div className="col-start-2 flex flex-wrap items-center gap-2 pt-1">
+        <div className="col-start-2 flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-sm">
           {event.registrationUrl && (
-            <Button asChild className="min-h-11 px-4">
-              <a href={event.registrationUrl} target="_blank" rel="noreferrer" aria-label={`Register for ${event.title}`}>
-                Register <ExternalLink data-icon="inline-end" />
-              </a>
-            </Button>
+            <a
+              href={event.registrationUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-10 items-center gap-1 font-medium underline underline-offset-4"
+              aria-label={`Register for ${event.title}`}
+            >
+              Register <ExternalLink className="size-3.5" />
+            </a>
           )}
           {directionsQuery && (
-            <Button asChild variant="outline" className="min-h-11 px-4">
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(directionsQuery)}`}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`Get directions to ${event.title}`}
-              >
-                Directions <Navigation data-icon="inline-end" />
-              </a>
-            </Button>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(directionsQuery)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-10 items-center gap-1 underline underline-offset-4"
+              aria-label={`Get directions to ${event.title}`}
+            >
+              Directions <Navigation className="size-3.5" />
+            </a>
           )}
-          <span className="text-xs text-muted-foreground">Source: {sourceLabel}</span>
+          <span className="text-xs text-muted-foreground">{sourceLabel}</span>
         </div>
       </article>
     </li>
@@ -308,10 +308,10 @@ function EventRow({ event, selected }: { event: EventListItem; selected: boolean
 
 function LoadingCards() {
   return (
-    <div role="status" aria-label="Finding nearby events" className="space-y-3">
+    <div role="status" aria-label="Finding nearby events" className="divide-y border-y">
       <span className="sr-only">Finding nearby events…</span>
       {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} aria-hidden="true" className="h-40 animate-pulse rounded-xl border bg-muted/45" />
+        <div key={index} aria-hidden="true" className="h-36 animate-pulse bg-muted/35" />
       ))}
     </div>
   );
@@ -454,7 +454,6 @@ export function App() {
     window.requestAnimationFrame(() => document.getElementById(`event-${eventId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
   }, []);
 
-  const statusLabel = status === "live" ? "Listings live" : status === "preview" ? "Preview data" : status === "loading" ? "Updating" : "Service offline";
   const emptyState = selectedGames.length === 0 ? {
     title: "Choose at least one game",
     description: "Select the games you want to include in the event list.",
@@ -474,145 +473,103 @@ export function App() {
 
   return (
     <div className="min-h-svh bg-background text-foreground">
-      <a href="#main-content" className="sr-only z-[1000] rounded-md bg-background px-4 py-3 font-semibold focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
-        Skip to event finder
+      <a href="#main-content" className="sr-only z-[1000] bg-background px-4 py-3 font-semibold focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
+        Skip to events
       </a>
 
-      <header className="sticky top-0 z-[600] border-b bg-background/92 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[90rem] items-center justify-between px-4 sm:px-6 lg:px-8">
-          <a href="#top" className="flex min-h-11 items-center gap-2.5 rounded-lg text-sm font-semibold tracking-tight">
-            <img src="/town-map-sprite.png" alt="" className="size-8 object-contain [image-rendering:pixelated]" aria-hidden="true" />
-            <span>Town Map</span>
-          </a>
-          <nav aria-label="Primary" className="flex items-center gap-1 sm:gap-3">
-            <a href="#about" className="hidden min-h-11 items-center rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground sm:flex">About</a>
-            <Badge variant="outline" className="h-8 gap-2 px-3 text-xs">
-              <span className={`size-2 rounded-full ${status === "live" ? "bg-emerald-500" : status === "error" ? "bg-destructive" : "bg-amber-500"}`} />
-              {statusLabel}
-            </Badge>
-          </nav>
-        </div>
-      </header>
+      <main id="main-content" className="mx-auto max-w-[90rem] px-4 py-4 sm:px-6 lg:px-8">
+        <h1 className="sr-only">Town Map events</h1>
 
-      <main id="main-content">
-        <section id="top" className="hero-grid border-b">
-          <div className="mx-auto max-w-[90rem] px-4 py-9 sm:px-6 sm:py-12 lg:px-8">
-            <div className="max-w-3xl">
-              <Badge variant="outline" className="mb-4 bg-background/70"><MapPin className="size-3.5" /> Local card-game events</Badge>
-              <h1 className="text-balance text-3xl font-bold tracking-[-0.035em] sm:text-5xl">Find your next card night.</h1>
-              <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-                Explore Pokémon, Magic, and Yu-Gi-Oh! events on a map, then head straight to the official listing.
-              </p>
+        <section aria-label="Location and event filters" className="border-b pb-4">
+          <form onSubmit={searchPlace} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 lg:grid-cols-[minmax(13rem,1fr)_8rem_auto]">
+            <div className="relative col-span-2 lg:col-span-1">
+              <Label htmlFor="place-search" className="sr-only">City or ZIP code</Label>
+              <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="place-search"
+                value={placeQuery}
+                onChange={(event) => setPlaceQuery(event.target.value)}
+                placeholder="City, state, or ZIP code"
+                autoComplete="postal-code"
+                className="h-11 pl-10"
+              />
             </div>
-
-            <section aria-labelledby="location-heading" className="mt-7 rounded-2xl border bg-background/90 p-4 shadow-sm backdrop-blur sm:p-5">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 id="location-heading" className="font-semibold">Where do you want to play?</h2>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Location access is optional—search any city or ZIP code.</p>
-                </div>
-                <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium">{locationLabel} · {radiusMiles} mi</span>
-              </div>
-              <form onSubmit={searchPlace} className="grid gap-3 md:grid-cols-[minmax(15rem,1fr)_9rem_auto]">
-                <div>
-                  <Label htmlFor="place-search" className="sr-only">City or ZIP code</Label>
-                  <div className="relative">
-                    <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="place-search"
-                      value={placeQuery}
-                      onChange={(event) => setPlaceQuery(event.target.value)}
-                      placeholder="City, state, or ZIP code"
-                      autoComplete="postal-code"
-                      className="h-11 pl-10"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="radius" className="sr-only">Search radius</Label>
-                  <select
-                    id="radius"
-                    className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    value={radiusMiles}
-                    onChange={(event) => setRadiusMiles(Number(event.target.value))}
-                  >
-                    {[10, 25, 50, 100].map((radius) => <option key={radius} value={radius}>{radius} miles</option>)}
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <Button type="submit" className="h-11 flex-1 px-4" disabled={!placeQuery.trim() || locationStatus === "searching"}>
-                    {locationStatus === "searching" ? "Searching…" : "Search area"}
-                  </Button>
-                  <Button type="button" variant="outline" className="h-11 px-4" onClick={useCurrentLocation} disabled={locationStatus === "locating"}>
-                    <LocateFixed /> <span className="sr-only sm:not-sr-only">{locationStatus === "locating" ? "Locating…" : "Use my location"}</span>
-                  </Button>
-                </div>
-              </form>
-              {locationNotice && <p role="status" className="mt-3 flex items-start gap-2 text-sm text-destructive"><CircleAlert className="mt-0.5 size-4 shrink-0" />{locationNotice}</p>}
-            </section>
-          </div>
-        </section>
-
-        <section aria-label="Event filters" className="sticky top-16 z-[550] border-b bg-background/94 backdrop-blur-xl">
-          <div className="mx-auto max-w-[90rem] px-4 py-3 sm:px-6 lg:px-8">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[13rem_minmax(14rem,1fr)_11rem_11rem]">
-              <div>
-                <Label className="mb-1.5 block text-sm">Games</Label>
-                <GameMultiSelect value={selectedGames} onChange={setSelectedGames} />
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-sm" htmlFor="event-search">Search events</Label>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="event-search"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Event, game, store, or format"
-                    className="h-11 pr-11 pl-10"
-                  />
-                  {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
-                </div>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-sm" htmlFor="event-date">Date</Label>
-                <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilter)}>
-                  <SelectTrigger id="event-date" className="min-h-11 w-full px-3"><CalendarDays /><SelectValue /></SelectTrigger>
-                  <SelectContent position="popper">{DATE_OPTIONS.map((option) => <SelectItem className="min-h-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-sm" htmlFor="event-sort">Sort by</Label>
-                <Select value={sort} onValueChange={(value) => setSort(value as SortOption)}>
-                  <SelectTrigger id="event-sort" className="min-h-11 w-full px-3"><SelectValue /></SelectTrigger>
-                  <SelectContent position="popper">{SORT_OPTIONS.map((option) => <SelectItem className="min-h-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mx-auto max-w-[90rem] px-4 py-6 sm:px-6 lg:px-8 lg:py-8" aria-labelledby="events-heading">
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-primary">Near {locationLabel}</p>
-              <h2 id="events-heading" className="mt-1 text-2xl font-semibold tracking-tight">Upcoming events</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {status === "loading" ? "Finding official listings…" : `${visibleEvents.length} matching ${visibleEvents.length === 1 ? "event" : "events"} within ${radiusMiles} miles`}
-              </p>
+              <Label htmlFor="radius" className="sr-only">Search radius</Label>
+              <select
+                id="radius"
+                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                value={radiusMiles}
+                onChange={(event) => setRadiusMiles(Number(event.target.value))}
+              >
+                {[10, 25, 50, 100].map((radius) => <option key={radius} value={radius}>{radius} miles</option>)}
+              </select>
             </div>
-            <div className="flex rounded-xl border bg-muted/40 p-1 lg:hidden" aria-label="Choose results view">
-              <Button variant={viewMode === "list" ? "default" : "ghost"} className="min-h-11 px-4" onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"}><List /> List</Button>
-              <Button variant={viewMode === "map" ? "default" : "ghost"} className="min-h-11 px-4" onClick={() => setViewMode("map")} aria-pressed={viewMode === "map"}><MapIcon /> Map</Button>
+            <div className="flex gap-2">
+              <Button type="submit" className="h-11 flex-1 px-4" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+                {locationStatus === "searching" ? "Searching…" : "Search"}
+              </Button>
+              <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
+                <LocateFixed />
+              </Button>
+            </div>
+          </form>
+
+          <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-[minmax(14rem,1fr)_13rem_10rem_10rem]">
+            <div className="relative col-span-2 lg:col-span-1">
+              <Label className="sr-only" htmlFor="event-search">Search events</Label>
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="event-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Event, game, store, or format"
+                className="h-11 pr-11 pl-10"
+              />
+              {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
+            </div>
+            <GameMultiSelect value={selectedGames} onChange={setSelectedGames} />
+            <div>
+              <Label className="sr-only" htmlFor="event-date">Date</Label>
+              <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilter)}>
+                <SelectTrigger id="event-date" aria-label="Date" className="min-h-11 w-full px-3"><SelectValue /></SelectTrigger>
+                <SelectContent position="popper">{DATE_OPTIONS.map((option) => <SelectItem className="min-h-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 lg:col-span-1">
+              <Label className="sr-only" htmlFor="event-sort">Sort events</Label>
+              <Select value={sort} onValueChange={(value) => setSort(value as SortOption)}>
+                <SelectTrigger id="event-sort" aria-label="Sort events" className="min-h-11 w-full px-3"><SelectValue /></SelectTrigger>
+                <SelectContent position="popper">{SORT_OPTIONS.map((option) => <SelectItem className="min-h-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+              </Select>
             </div>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,0.88fr)_minmax(25rem,1.12fr)] lg:items-start">
+          <div className="mt-2 flex min-h-6 items-center text-xs text-muted-foreground">
+            <span>{locationLabel} · {radiusMiles} mi</span>
+            {locationNotice && <span role="status" className="ml-3 inline-flex items-center gap-1 text-destructive"><CircleAlert className="size-3.5 shrink-0" />{locationNotice}</span>}
+          </div>
+        </section>
+
+        <section aria-labelledby="events-heading">
+          <h2 id="events-heading" className="sr-only">Events</h2>
+          <div className="flex min-h-14 items-center justify-between gap-3 border-b py-2 text-sm">
+            <p className="text-muted-foreground">
+              {status === "loading" ? "Finding events…" : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"}`}
+              {status === "preview" ? " · preview data" : ""}
+            </p>
+            <div className="flex lg:hidden" aria-label="Choose results view">
+              <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"}><List /> List</Button>
+              <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("map")} aria-pressed={viewMode === "map"}><MapIcon /> Map</Button>
+            </div>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,0.88fr)_minmax(25rem,1.12fr)] lg:items-start">
             <div className={`${viewMode === "map" ? "hidden" : "block"} min-w-0 lg:block`}>
               {status === "loading" ? (
                 <LoadingCards />
               ) : visibleEvents.length === 0 ? (
-                <Empty className="rounded-2xl border py-16">
+                <Empty className="border-b py-16">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
                     <EmptyTitle>{emptyState.title}</EmptyTitle>
@@ -622,26 +579,27 @@ export function App() {
                 </Empty>
               ) : (
                 <>
-                  <ol className="space-y-3" aria-label="Event results">
+                  <ol className="divide-y border-b" aria-label="Event results">
                     {pagedEvents.map((event) => <EventRow key={event.id} event={event} selected={event.id === selectedEventId} />)}
                   </ol>
                   {visibleCount < visibleEvents.length && (
-                    <div className="mt-5 rounded-xl border border-dashed p-4 text-center">
-                      <p className="mb-3 text-sm text-muted-foreground">Showing {pagedEvents.length} of {visibleEvents.length} events</p>
-                      <Button variant="outline" className="min-h-11 px-5" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>Load {Math.min(PAGE_SIZE, visibleEvents.length - visibleCount)} more</Button>
+                    <div className="py-5 text-center">
+                      <Button variant="outline" className="min-h-11 px-5" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                        Load {Math.min(PAGE_SIZE, visibleEvents.length - visibleCount)} more
+                      </Button>
                     </div>
                   )}
                 </>
               )}
             </div>
 
-            <div className={`${viewMode === "list" ? "hidden" : "block"} lg:sticky lg:top-[12.5rem] lg:block lg:h-[calc(100svh-14rem)]`}>
+            <div className={`${viewMode === "list" ? "hidden" : "block"} pt-5 lg:sticky lg:top-4 lg:block lg:h-[calc(100svh-2rem)] lg:pt-0`}>
               {status === "loading" ? (
-                <div className="grid h-[28rem] place-items-center rounded-2xl border bg-muted/35 text-sm text-muted-foreground">Preparing the map…</div>
+                <div className="grid h-[28rem] place-items-center border bg-muted/20 text-sm text-muted-foreground">Preparing the map…</div>
               ) : mappableEvents.length === 0 ? (
-                <div className="grid h-[28rem] place-items-center rounded-2xl border bg-muted/35 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
+                <div className="grid h-[28rem] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
               ) : (
-                <Suspense fallback={<div className="grid h-[28rem] place-items-center rounded-2xl border bg-muted/35 text-sm text-muted-foreground">Loading the map…</div>}>
+                <Suspense fallback={<div className="grid h-[28rem] place-items-center border bg-muted/20 text-sm text-muted-foreground">Loading the map…</div>}>
                   <EventMap center={location} events={mappableEvents} active={viewMode === "map" || window.innerWidth >= 1024} selectedEventId={selectedEventId} onSelect={handleMapSelect} />
                 </Suspense>
               )}
@@ -650,30 +608,10 @@ export function App() {
           </div>
         </section>
 
-        <section id="about" className="border-t bg-muted/35">
-          <div className="mx-auto grid max-w-[90rem] gap-8 px-4 py-10 sm:px-6 md:grid-cols-3 lg:px-8">
-            <div>
-              <h2 className="font-semibold">About Town Map</h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Town Map brings official trading-card event listings into one local view. Always confirm final details with the organizer.</p>
-            </div>
-            <div>
-              <h2 className="font-semibold">Data sources</h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Listings link to Wizards Event Locator, Konami Card Game Network, and Pokedata Pokémon event data.</p>
-            </div>
-            <div>
-              <h2 className="font-semibold">Location and privacy</h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Location access is optional. Search a city or ZIP code whenever you prefer not to share your current position.</p>
-            </div>
-          </div>
-        </section>
+        <p className="py-5 text-xs text-muted-foreground">
+          Verify details with the organizer. Map and place search © OpenStreetMap contributors.
+        </p>
       </main>
-
-      <footer className="border-t bg-background">
-        <div className="mx-auto flex max-w-[90rem] flex-col gap-2 px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <span>Town Map · Independent event discovery · Map and place search © OpenStreetMap contributors</span>
-          <span>Listings can change. Verify time, location, and registration with the organizer.</span>
-        </div>
-      </footer>
     </div>
   );
 }

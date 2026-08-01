@@ -97,17 +97,13 @@ export function EventMap({
   }, [active]);
 
   return (
-    <div className="relative h-full min-h-[28rem] overflow-hidden rounded-2xl border bg-muted/40">
+    <div className="relative h-full min-h-[28rem] overflow-hidden border bg-muted/40">
       <div
         ref={containerRef}
         className="absolute inset-0"
         role="region"
         aria-label={`Map showing ${events.length} events near the selected location`}
       />
-      <div className="pointer-events-none absolute top-3 right-3 z-[500] max-w-[calc(100%-4.5rem)] rounded-lg border bg-background/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
-        <span className="font-semibold">Map view</span>
-        <span className="ml-1.5 text-muted-foreground">Select a pin to highlight its event.</span>
-      </div>
     </div>
   );
 }
