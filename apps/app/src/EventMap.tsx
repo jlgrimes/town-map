@@ -7,14 +7,9 @@ import {
   type MapRef,
   type MapViewport,
 } from "@/components/ui/map";
-import type { EventListItem, Game } from "@town-map/contracts";
+import type { EventListItem } from "@town-map/contracts";
 import { useEffect, useRef, useState } from "react";
-
-const GAME_INITIALS: Record<Game, string> = {
-  pokemon: "P",
-  magic: "M",
-  yugioh: "Y",
-};
+import { GameIcon } from "./GameIcon";
 
 const MAP_STYLES = {
   light: "https://tiles.openfreemap.org/styles/bright",
@@ -87,9 +82,9 @@ export function EventMap({
                 <button
                   type="button"
                   aria-label={`Show ${event.title} in the event list`}
-                  className={`grid size-8 cursor-pointer place-items-center rounded-full border-2 border-white bg-primary text-xs font-bold text-primary-foreground shadow-md transition-transform hover:scale-110 ${selected ? "scale-125 ring-4 ring-primary/30" : ""}`}
+                  className={`grid size-10 cursor-pointer place-items-center rounded-lg border border-border bg-background/95 p-1 shadow-md transition-transform hover:scale-110 ${selected ? "scale-125 ring-4 ring-primary/30" : ""}`}
                 >
-                  {GAME_INITIALS[event.game]}
+                  <GameIcon game={event.game} className="size-7 object-contain" decorative />
                 </button>
               </MarkerContent>
               <MarkerTooltip>{event.title}</MarkerTooltip>

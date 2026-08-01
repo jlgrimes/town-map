@@ -44,6 +44,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { fetchEvents, fetchUserPreferences, geocodePlace, saveUserPreferences } from "./api";
 import { demoEvents } from "./demo-events";
+import { GameIcon } from "./GameIcon";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -284,9 +285,10 @@ function EventRow({ event, selected }: { event: EventListItem; selected: boolean
               </a>
             ) : event.title}
           </h3>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {[GAME_LABELS[event.game], ...metadata].join(" · ")}
-          </p>
+          <div className="mt-1.5 flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
+            <GameIcon game={event.game} className="size-5 shrink-0 object-contain" />
+            {metadata.length > 0 && <span>{metadata.join(" · ")}</span>}
+          </div>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             <span className="text-foreground">{location || "Venue to be announced"}</span>
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
