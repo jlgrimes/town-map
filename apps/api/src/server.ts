@@ -33,6 +33,7 @@ type HomeLocation = {
 };
 
 await app.register(cors, {
+  methods: ["GET", "HEAD", "POST", "PUT", "OPTIONS"],
   origin(origin, callback) {
     if (!origin || configuredOrigins.includes(origin) || nativeOrigins.has(origin)) callback(null, true);
     else callback(new Error("Origin is not allowed"), false);
