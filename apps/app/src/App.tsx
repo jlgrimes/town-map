@@ -480,7 +480,7 @@ export function App() {
       <header className="border-b">
         <div className="mx-auto flex h-14 max-w-[90rem] items-center px-4 sm:px-6 lg:px-8">
           <a href="/" className="inline-flex items-center gap-2 text-sm font-semibold" aria-label="Town Map home">
-            <img src="/town-map-sprite.png" alt="" className="size-8 object-contain" />
+            <img src="/town-map.png" alt="" className="size-8 object-contain" />
             <span>Town Map</span>
           </a>
         </div>
