@@ -48,24 +48,24 @@
 
 :root {
     color-scheme: light;
-    --background: oklch(0.992 0.004 95);
-    --foreground: oklch(0.19 0.025 155);
+    --background: oklch(0.992 0.006 85);
+    --foreground: oklch(0.19 0.018 55);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.19 0.025 155);
+    --card-foreground: oklch(0.19 0.018 55);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.19 0.025 155);
-    --primary: oklch(0.38 0.115 154);
-    --primary-foreground: oklch(0.99 0.005 95);
-    --secondary: oklch(0.955 0.025 145);
-    --secondary-foreground: oklch(0.27 0.075 154);
-    --muted: oklch(0.965 0.012 105);
-    --muted-foreground: oklch(0.5 0.035 155);
-    --accent: oklch(0.94 0.035 145);
-    --accent-foreground: oklch(0.27 0.075 154);
+    --popover-foreground: oklch(0.19 0.018 55);
+    --primary: oklch(0.74 0.17 68);
+    --primary-foreground: oklch(0.18 0.035 50);
+    --secondary: oklch(0.955 0.035 78);
+    --secondary-foreground: oklch(0.28 0.06 55);
+    --muted: oklch(0.965 0.016 82);
+    --muted-foreground: oklch(0.5 0.03 60);
+    --accent: oklch(0.93 0.07 76);
+    --accent-foreground: oklch(0.27 0.06 55);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.9 0.018 135);
-    --input: oklch(0.87 0.025 140);
-    --ring: oklch(0.58 0.12 154);
+    --border: oklch(0.89 0.025 78);
+    --input: oklch(0.86 0.035 76);
+    --ring: oklch(0.68 0.15 62);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -74,10 +74,10 @@
     --radius: 0.75rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-primary: oklch(0.74 0.17 68);
+    --sidebar-primary-foreground: oklch(0.18 0.035 50);
+    --sidebar-accent: oklch(0.955 0.035 78);
+    --sidebar-accent-foreground: oklch(0.28 0.06 55);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
 }
@@ -85,37 +85,37 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --background: oklch(0.16 0.018 155);
-    --foreground: oklch(0.965 0.012 105);
-    --card: oklch(0.205 0.022 155);
-    --card-foreground: oklch(0.965 0.012 105);
-    --popover: oklch(0.205 0.022 155);
-    --popover-foreground: oklch(0.965 0.012 105);
-    --primary: oklch(0.72 0.13 151);
-    --primary-foreground: oklch(0.15 0.025 155);
-    --secondary: oklch(0.255 0.035 155);
-    --secondary-foreground: oklch(0.94 0.018 115);
-    --muted: oklch(0.245 0.022 155);
-    --muted-foreground: oklch(0.72 0.025 145);
-    --accent: oklch(0.29 0.045 154);
-    --accent-foreground: oklch(0.96 0.012 105);
+    --background: oklch(0.16 0.016 55);
+    --foreground: oklch(0.965 0.014 82);
+    --card: oklch(0.205 0.02 55);
+    --card-foreground: oklch(0.965 0.014 82);
+    --popover: oklch(0.205 0.02 55);
+    --popover-foreground: oklch(0.965 0.014 82);
+    --primary: oklch(0.76 0.16 70);
+    --primary-foreground: oklch(0.18 0.035 50);
+    --secondary: oklch(0.255 0.035 58);
+    --secondary-foreground: oklch(0.94 0.02 80);
+    --muted: oklch(0.245 0.025 58);
+    --muted-foreground: oklch(0.72 0.03 72);
+    --accent: oklch(0.3 0.06 62);
+    --accent-foreground: oklch(0.96 0.014 82);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(0.98 0.015 120 / 13%);
-    --input: oklch(0.98 0.015 120 / 20%);
-    --ring: oklch(0.68 0.12 151);
+    --border: oklch(0.98 0.025 80 / 13%);
+    --input: oklch(0.98 0.025 80 / 20%);
+    --ring: oklch(0.72 0.15 65);
     --chart-1: oklch(0.78 0.12 151);
     --chart-2: oklch(0.66 0.1 190);
     --chart-3: oklch(0.7 0.12 80);
     --chart-4: oklch(0.68 0.13 300);
     --chart-5: oklch(0.68 0.14 30);
-    --sidebar: oklch(0.19 0.022 155);
-    --sidebar-foreground: oklch(0.965 0.012 105);
-    --sidebar-primary: oklch(0.72 0.13 151);
-    --sidebar-primary-foreground: oklch(0.15 0.025 155);
-    --sidebar-accent: oklch(0.255 0.035 155);
-    --sidebar-accent-foreground: oklch(0.965 0.012 105);
-    --sidebar-border: oklch(0.98 0.015 120 / 13%);
-    --sidebar-ring: oklch(0.68 0.12 151);
+    --sidebar: oklch(0.19 0.02 55);
+    --sidebar-foreground: oklch(0.965 0.014 82);
+    --sidebar-primary: oklch(0.76 0.16 70);
+    --sidebar-primary-foreground: oklch(0.18 0.035 50);
+    --sidebar-accent: oklch(0.255 0.035 58);
+    --sidebar-accent-foreground: oklch(0.965 0.014 82);
+    --sidebar-border: oklch(0.98 0.025 80 / 13%);
+    --sidebar-ring: oklch(0.72 0.15 65);
   }
 }
 
@@ -131,54 +131,22 @@
     @apply font-sans;
     scroll-behavior: smooth;
     }
-}
-
-@layer components {
-  .town-map-marker-wrap {
-    background: transparent;
-    border: 0;
-  }
-
-  .town-map-marker {
-    display: grid;
-    width: 30px;
-    height: 30px;
-    place-items: center;
-    border: 3px solid white;
-    border-radius: 999px;
-    background: var(--marker-color);
-    box-shadow: 0 2px 8px rgb(0 0 0 / 28%);
-    color: white;
-    font: 700 11px/1 'Geist Variable', sans-serif;
-    transition: transform 150ms ease, box-shadow 150ms ease;
-  }
-
-  .town-map-marker.is-selected {
-    width: 38px;
-    height: 38px;
-    transform: translate(-4px, -4px);
-    box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 28%, transparent), 0 4px 14px rgb(0 0 0 / 32%);
-  }
-
-  .leaflet-container {
-    background: var(--muted);
-    font-family: 'Geist Variable', sans-serif;
-  }
-
-  .leaflet-control-attribution {
-    font-size: 10px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .leaflet-tile-pane {
-    filter: invert(0.9) hue-rotate(175deg) brightness(0.78) contrast(0.92) saturate(0.75);
-  }
-
-  .leaflet-control-zoom a,
-  .leaflet-control-attribution {
-    background: color-mix(in oklch, var(--card) 94%, transparent);
-    color: var(--foreground);
-  }
-
+  .maplibregl-popup-content {
+    @apply bg-transparent! shadow-none! p-0! rounded-none!;
+    }
+  .maplibregl-popup-tip {
+    @apply hidden!;
+    }
+  .maplibregl-ctrl-attrib {
+    @apply bg-background! text-muted-foreground! border-border! rounded-md! border! shadow-sm!;
+    }
+  .maplibregl-ctrl-attrib a {
+    @apply text-muted-foreground!;
+    }
+  .maplibregl-ctrl-attrib a:hover {
+    @apply text-foreground!;
+    }
+  .maplibregl-ctrl-attrib-button {
+    @apply bg-transparent! dark:invert;
+    }
 }

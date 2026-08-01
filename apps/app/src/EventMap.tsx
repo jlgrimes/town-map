@@ -1,18 +1,24 @@
+import {
+  Map,
+  MapControls,
+  MapMarker,
+  MarkerContent,
+  MarkerTooltip,
+  type MapRef,
+  type MapViewport,
+} from "@/components/ui/map";
 import type { EventListItem, Game } from "@town-map/contracts";
-import L, { type LayerGroup, type Map as LeafletMap } from "leaflet";
-import "leaflet/dist/leaflet.css";
-import { useEffect, useRef } from "react";
-
-const GAME_COLORS: Record<Game, string> = {
-  pokemon: "#eab308",
-  magic: "#ef4444",
-  yugioh: "#6366f1",
-};
+import { useEffect, useRef, useState } from "react";
 
 const GAME_INITIALS: Record<Game, string> = {
   pokemon: "P",
   magic: "M",
   yugioh: "Y",
+};
+
+const MAP_STYLES = {
+  light: "https://tiles.openfreemap.org/styles/bright",
+  dark: "https://tiles.openfreemap.org/styles/dark",
 };
 
 export function EventMap({
@@ -28,82 +34,69 @@ export function EventMap({
   selectedEventId: string | null;
   onSelect: (eventId: string) => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<LeafletMap | null>(null);
-  const markersRef = useRef<LayerGroup | null>(null);
+  const mapRef = useRef<MapRef>(null);
+  const [viewport, setViewport] = useState<MapViewport>({
+    center: [center.longitude, center.latitude],
+    zoom: 10,
+    bearing: 0,
+    pitch: 0,
+  });
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-
-    const map = L.map(containerRef.current, {
-      zoomControl: true,
-      scrollWheelZoom: false,
-    }).setView([center.latitude, center.longitude], 10);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 18,
-    }).addTo(map);
-
-    mapRef.current = map;
-    markersRef.current = L.layerGroup().addTo(map);
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-      markersRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    mapRef.current?.setView([center.latitude, center.longitude], mapRef.current.getZoom());
+    setViewport((current) => ({
+      ...current,
+      center: [center.longitude, center.latitude],
+    }));
   }, [center.latitude, center.longitude]);
 
   useEffect(() => {
-    const layer = markersRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-
-    for (const event of events) {
-      const latitude = event.venue?.latitude;
-      const longitude = event.venue?.longitude;
-      if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) continue;
-
-      const selected = event.id === selectedEventId;
-      const marker = L.marker([latitude, longitude], {
-        icon: L.divIcon({
-          className: "town-map-marker-wrap",
-          html: `<span aria-hidden="true" class="town-map-marker${selected ? " is-selected" : ""}" style="--marker-color:${GAME_COLORS[event.game]}">${GAME_INITIALS[event.game]}</span>`,
-          iconSize: selected ? [38, 38] : [30, 30],
-          iconAnchor: selected ? [19, 19] : [15, 15],
-        }),
-        keyboard: true,
-        title: event.title,
-      });
-
-      const tooltip = document.createElement("span");
-      tooltip.textContent = event.title;
-      marker.bindTooltip(tooltip, { direction: "top", offset: [0, -12] });
-      marker.on("click", () => onSelect(event.id));
-      marker.addTo(layer);
-      marker.getElement()?.setAttribute("aria-label", `Show ${event.title} in the event list`);
-    }
-  }, [events, onSelect, selectedEventId]);
-
-  useEffect(() => {
     if (!active) return;
-    const frame = window.requestAnimationFrame(() => mapRef.current?.invalidateSize());
+    const frame = window.requestAnimationFrame(() => mapRef.current?.resize());
     return () => window.cancelAnimationFrame(frame);
   }, [active]);
 
   return (
-    <div className="relative h-full min-h-[28rem] overflow-hidden border bg-muted/40">
-      <div
-        ref={containerRef}
-        className="absolute inset-0"
-        role="region"
-        aria-label={`Map showing ${events.length} events near the selected location`}
-      />
+    <div
+      className="relative h-full min-h-[28rem] overflow-hidden border bg-muted/40"
+      role="region"
+      aria-label={`Map showing ${events.length} events near the selected location`}
+    >
+      <Map
+        ref={mapRef}
+        viewport={viewport}
+        onViewportChange={setViewport}
+        styles={MAP_STYLES}
+        cooperativeGestures
+        className="h-full min-h-[28rem]"
+      >
+        <MapControls position="top-left" showZoom />
+        {events.map((event) => {
+          const latitude = event.venue?.latitude;
+          const longitude = event.venue?.longitude;
+          if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) return null;
+
+          const selected = event.id === selectedEventId;
+          return (
+            <MapMarker
+              key={event.id}
+              longitude={longitude}
+              latitude={latitude}
+              onClick={() => onSelect(event.id)}
+            >
+              <MarkerContent>
+                <button
+                  type="button"
+                  aria-label={`Show ${event.title} in the event list`}
+                  className={`grid size-8 cursor-pointer place-items-center rounded-full border-2 border-white bg-primary text-xs font-bold text-primary-foreground shadow-md transition-transform hover:scale-110 ${selected ? "scale-125 ring-4 ring-primary/30" : ""}`}
+                >
+                  {GAME_INITIALS[event.game]}
+                </button>
+              </MarkerContent>
+              <MarkerTooltip>{event.title}</MarkerTooltip>
+            </MapMarker>
+          );
+        })}
+      </Map>
     </div>
   );
 }
