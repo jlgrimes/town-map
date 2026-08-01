@@ -1,0 +1,31 @@
+{
+  "name": "town-map",
+  "private": true,
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "current"
+      ],
+      "cpu": [
+        "arm64",
+        "x64"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "turbo build",
+    "check": "turbo check",
+    "dev": "turbo dev",
+    "db:migrate": "pnpm --filter @town-map/db migrate",
+    "test": "turbo test"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "turbo": "2.10.8",
+    "typescript": "5.9.3"
+  }
+}

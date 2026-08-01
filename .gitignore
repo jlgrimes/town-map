@@ -1,0 +1,14 @@
+node_modules
+.turbo
+dist
+.env
+.env.*
+!.env.example
+coverage
+.DS_Store
+apps/app/android/.gradle
+apps/app/android/local.properties
+apps/app/android/app/build
+apps/app/ios/App/Pods
+apps/app/ios/App/DerivedData
+.vercel
