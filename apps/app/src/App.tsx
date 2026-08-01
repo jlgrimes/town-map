@@ -19,24 +19,15 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { GAME_LABELS, type EventListItem, type Game, type HomeLocation } from "@town-map/contracts";
 import {
   ChevronDown,
   CircleAlert,
-  ExternalLink,
   House,
   List,
   LocateFixed,
   Map as MapIcon,
   MapPin,
-  Navigation,
   RefreshCw,
   Search,
   X,
@@ -51,15 +42,8 @@ const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: mo
 const ALL_GAMES: Game[] = ["pokemon", "magic", "yugioh"];
 const PAGE_SIZE = 24;
 
-type SortOption = "soonest" | "nearest" | "name";
 type DateFilter = "all" | "today" | "tomorrow" | "week";
 type ViewMode = "list" | "map";
-
-const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
-  { value: "soonest", label: "Soonest" },
-  { value: "nearest", label: "Nearest" },
-  { value: "name", label: "Event name" },
-];
 
 const DATE_OPTIONS: Array<{ value: DateFilter; label: string }> = [
   { value: "all", label: "All upcoming" },
@@ -67,13 +51,6 @@ const DATE_OPTIONS: Array<{ value: DateFilter; label: string }> = [
   { value: "tomorrow", label: "Tomorrow" },
   { value: "week", label: "Next 7 days" },
 ];
-
-const SOURCE_LABELS: Record<EventListItem["source"], string> = {
-  "pokedata-events": "Pokémon event listing",
-  "wotc-locator": "Wizards Event Locator",
-  "konami-kcgn": "Konami Card Game Network",
-  "konami-events": "Konami Events",
-};
 
 const META_LABELS: Record<string, string> = {
   booster_draft: "Booster Draft",
@@ -108,13 +85,9 @@ const guestAuth: AppAuth = {
 };
 
 function initialGames() {
-  const requested = initialParams.get("games")?.split(",").filter((game): game is Game => ALL_GAMES.includes(game as Game));
-  return requested?.length ? requested : ALL_GAMES;
-}
-
-function initialSort(): SortOption {
-  const value = initialParams.get("sort");
-  return SORT_OPTIONS.some((option) => option.value === value) ? value as SortOption : "soonest";
+  const rawGames = initialParams.get("games");
+  if (rawGames === null) return ALL_GAMES;
+  return rawGames.split(",").filter((game): game is Game => ALL_GAMES.includes(game as Game));
 }
 
 function initialDateFilter(): DateFilter {
@@ -156,16 +129,28 @@ function eventMetadata(event: EventListItem) {
   return values.filter((value, index) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index);
 }
 
-function sortEvents(events: EventListItem[], sort: SortOption) {
+function sortEvents(events: EventListItem[]) {
   return [...events].sort((a, b) => {
     const dateDifference = new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
-    if (sort === "nearest") {
-      const distanceDifference = (a.distanceMiles ?? Number.POSITIVE_INFINITY) - (b.distanceMiles ?? Number.POSITIVE_INFINITY);
-      return distanceDifference || dateDifference;
-    }
-    if (sort === "name") return a.title.localeCompare(b.title) || dateDifference;
-    return dateDifference;
+    const distanceDifference = (a.distanceMiles ?? Number.POSITIVE_INFINITY) - (b.distanceMiles ?? Number.POSITIVE_INFINITY);
+    return dateDifference || distanceDifference || a.title.localeCompare(b.title);
   });
+}
+
+function eventDateKey(dateString: string) {
+  const date = new Date(dateString);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function groupEventsByDate(events: EventListItem[]) {
+  const groups: Array<{ key: string; label: string; events: EventListItem[] }> = [];
+  for (const event of events) {
+    const key = eventDateKey(event.startsAt);
+    const current = groups.at(-1);
+    if (current?.key === key) current.events.push(event);
+    else groups.push({ key, label: dateLabel(event.startsAt), events: [event] });
+  }
+  return groups;
 }
 
 function matchesDate(event: EventListItem, filter: DateFilter) {
@@ -197,135 +182,134 @@ function formatPrice(event: EventListItem) {
   }
 }
 
-function GameMultiSelect({ value, onChange }: { value: Game[]; onChange: (games: Game[]) => void }) {
-  const summary = value.length === ALL_GAMES.length
-    ? "All games"
-    : value.length === 0
-      ? "No games selected"
-      : value.map((game) => GAME_LABELS[game]).join(", ");
-
+function GameFilters({ value, onChange }: { value: Game[]; onChange: (games: Game[]) => void }) {
   function toggleGame(game: Game) {
     onChange(value.includes(game) ? value.filter((item) => item !== game) : [...value, game]);
   }
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          aria-label={`Filter by game: ${summary}`}
-          aria-haspopup="dialog"
-          className="h-11 w-full justify-between px-3 font-normal"
-        >
-          <span className="truncate">{summary}</span>
-          <ChevronDown data-icon="inline-end" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] p-2">
-        <fieldset>
-          <legend className="px-2 pb-1 text-sm font-semibold">Include games</legend>
-          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 hover:bg-muted">
-            <input
-              type="checkbox"
-              className="size-5 accent-[var(--primary)]"
-              checked={value.length === ALL_GAMES.length}
-              onChange={() => onChange(value.length === ALL_GAMES.length ? [] : ALL_GAMES)}
-            />
-            <span>All games</span>
-          </label>
-          <div className="my-1 h-px bg-border" />
-          {ALL_GAMES.map((game) => (
-            <label key={game} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 hover:bg-muted">
-              <input
-                type="checkbox"
-                className="size-5 accent-[var(--primary)]"
-                checked={value.includes(game)}
-                onChange={() => toggleGame(game)}
-              />
-              <span>{GAME_LABELS[game]}</span>
-            </label>
-          ))}
-        </fieldset>
-      </PopoverContent>
-    </Popover>
+    <fieldset className="flex items-center gap-1" aria-label="Games">
+      <legend className="sr-only">Games</legend>
+      {ALL_GAMES.map((game) => {
+        const selected = value.includes(game);
+        return (
+          <Button
+            key={game}
+            type="button"
+            variant={selected ? "secondary" : "ghost"}
+            size="icon"
+            className={`size-11 ${selected ? "ring-1 ring-primary/40" : "opacity-45"}`}
+            aria-label={`${selected ? "Exclude" : "Include"} ${GAME_LABELS[game]} events`}
+            aria-pressed={selected}
+            title={GAME_LABELS[game]}
+            onClick={() => toggleGame(game)}
+          >
+            <GameIcon game={game} className="size-6 object-contain" decorative />
+          </Button>
+        );
+      })}
+    </fieldset>
   );
 }
 
-function EventRow({ event, selected }: { event: EventListItem; selected: boolean }) {
+function DateFilters({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {
+  return (
+    <fieldset className="flex min-w-max items-center gap-1" aria-label="Date">
+      <legend className="sr-only">Date</legend>
+      {DATE_OPTIONS.map((option) => (
+        <Button
+          key={option.value}
+          type="button"
+          variant={value === option.value ? "secondary" : "ghost"}
+          className={`min-h-11 px-3 ${value === option.value ? "ring-1 ring-primary/40" : ""}`}
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.value === "all" ? "Any date" : option.value === "week" ? "This week" : option.label}
+        </Button>
+      ))}
+    </fieldset>
+  );
+}
+
+function EventRow({
+  event,
+  active,
+  onPreview,
+  onSelect,
+}: {
+  event: EventListItem;
+  active: boolean;
+  onPreview: (eventId: string | null) => void;
+  onSelect: (eventId: string) => void;
+}) {
   const location = [event.venue?.name, event.venue?.city, event.venue?.region].filter(Boolean).join(" · ");
-  const metadata = eventMetadata(event);
-  const price = formatPrice(event);
-  const sourceLabel = SOURCE_LABELS[event.source];
-  const directionsQuery = event.venue?.latitude !== null && event.venue?.latitude !== undefined
-    ? `${event.venue.latitude},${event.venue.longitude}`
-    : [event.venue?.address, event.venue?.city, event.venue?.region, event.venue?.postalCode].filter(Boolean).join(", ");
+  const details = [
+    ...eventMetadata(event),
+    formatPrice(event),
+    event.capacity !== null ? `Capacity ${event.capacity}` : null,
+  ].filter((detail): detail is string => detail !== null);
+  const mapsQuery = [
+    event.venue?.name,
+    event.venue?.address,
+    event.venue?.city,
+    event.venue?.region,
+    event.venue?.postalCode,
+  ].filter(Boolean).join(", ");
 
   return (
     <li
       id={`event-${event.id}`}
-      className={`scroll-mt-4 px-1 py-5 transition-colors sm:px-2 ${selected ? "bg-muted/60" : "hover:bg-muted/25"}`}
+      className={`scroll-mt-4 px-1 py-4 transition-colors sm:px-2 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
+      onMouseEnter={() => onPreview(event.id)}
+      onMouseLeave={() => onPreview(null)}
+      onFocusCapture={() => onPreview(event.id)}
+      onBlurCapture={(focusEvent) => {
+        if (!focusEvent.currentTarget.contains(focusEvent.relatedTarget)) onPreview(null);
+      }}
+      onClick={() => onSelect(event.id)}
     >
-      <article className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 sm:grid-cols-[5.5rem_minmax(0,1fr)]">
-        <div className="row-span-2">
-          <time dateTime={event.startsAt} className="block text-sm font-semibold">{dateLabel(event.startsAt)}</time>
-          <span className="mt-1 block text-sm tabular-nums text-muted-foreground">{timeLabel(event.startsAt)}</span>
-        </div>
+      <article className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-x-3">
+        <time dateTime={event.startsAt} className="pt-0.5 text-sm font-medium tabular-nums text-muted-foreground">
+          {timeLabel(event.startsAt)}
+        </time>
 
         <div className="min-w-0">
-          <h3 className="text-base leading-snug font-semibold tracking-tight sm:text-[1.05rem]">
-            {event.sourceUrl ? (
+          <div className="flex items-start gap-2">
+            <GameIcon game={event.game} className="size-5 shrink-0 object-contain" />
+            <h3 className="min-w-0 text-base leading-snug font-semibold tracking-tight">
+              {event.sourceUrl ? (
+                <a
+                  href={event.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                  aria-label={`View details for ${event.title}`}
+                >
+                  {event.title}
+                </a>
+              ) : event.title}
+            </h3>
+          </div>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            {mapsQuery ? (
               <a
-                href={event.sourceUrl}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                aria-label={`View ${event.title} on ${sourceLabel}`}
+                className="rounded-sm text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                aria-label={`Open ${location || "event location"} in Google Maps`}
               >
-                {event.title}
+                {location || "View location"}
               </a>
-            ) : event.title}
-          </h3>
-          <div className="mt-1.5 flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
-            <GameIcon game={event.game} className="size-5 shrink-0 object-contain" />
-            {metadata.length > 0 && <span>{metadata.join(" · ")}</span>}
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            <span className="text-foreground">{location || "Venue to be announced"}</span>
+            ) : (
+              <span className="text-foreground">Venue to be announced</span>
+            )}
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
           </p>
-          {(event.venue?.address || price || event.capacity) && (
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              {event.venue?.address && <span>{event.venue.address}</span>}
-              {price && <span>{price}</span>}
-              {event.capacity && <span>Capacity {event.capacity}</span>}
-            </div>
+          {details.length > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">{details.join(" · ")}</p>
           )}
-        </div>
-
-        <div className="col-start-2 flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-sm">
-          {event.registrationUrl && (
-            <a
-              href={event.registrationUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex min-h-10 items-center gap-1 font-medium underline underline-offset-4"
-              aria-label={`Register for ${event.title}`}
-            >
-              Register <ExternalLink className="size-3.5" />
-            </a>
-          )}
-          {directionsQuery && (
-            <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(directionsQuery)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex min-h-10 items-center gap-1 underline underline-offset-4"
-              aria-label={`Get directions to ${event.title}`}
-            >
-              Directions <Navigation className="size-3.5" />
-            </a>
-          )}
-          <span className="text-xs text-muted-foreground">{sourceLabel}</span>
         </div>
       </article>
     </li>
@@ -347,7 +331,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [selectedGames, setSelectedGames] = useState<Game[]>(initialGames);
   const [events, setEvents] = useState<EventListItem[]>([]);
   const [query, setQuery] = useState(initialParams.get("q") ?? "");
-  const [sort, setSort] = useState<SortOption>(initialSort);
   const [dateFilter, setDateFilter] = useState<DateFilter>(initialDateFilter);
   const [viewMode, setViewMode] = useState<ViewMode>(initialParams.get("view") === "map" ? "map" : "list");
   const [location, setLocation] = useState({
@@ -355,7 +338,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     longitude: initialNumber("lng", -87.6298),
   });
   const [locationLabel, setLocationLabel] = useState(initialParams.get("place") ?? "Chicago, IL");
-  const [locationAddress, setLocationAddress] = useState<string | null>(null);
   const [homeAddress, setHomeAddress] = useState<string | null>(null);
   const [homeLocation, setHomeLocation] = useState<HomeLocation | null>(null);
   const [homeEditorOpen, setHomeEditorOpen] = useState(false);
@@ -367,9 +349,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "locating">("idle");
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
+  const [locationEditorOpen, setLocationEditorOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!auth.enabled || !auth.loaded) return;
@@ -395,7 +379,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             setHomeLocation(result);
             setLocation({ latitude: result.latitude, longitude: result.longitude });
             setLocationLabel(result.label);
-            setLocationAddress(preferences.homeAddress);
           } catch (error) {
             if (error instanceof DOMException && error.name === "AbortError") return;
             setLocationNotice("Your home is saved, but we couldn't locate it right now.");
@@ -440,7 +423,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     const params = new URLSearchParams();
     if (selectedGames.length !== ALL_GAMES.length) params.set("games", selectedGames.join(","));
     if (query) params.set("q", query);
-    if (sort !== "soonest") params.set("sort", sort);
     if (dateFilter !== "all") params.set("date", dateFilter);
     if (viewMode !== "list") params.set("view", viewMode);
     params.set("lat", location.latitude.toFixed(5));
@@ -449,12 +431,13 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     params.set("place", locationLabel);
     const nextUrl = `${window.location.pathname}?${params}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [dateFilter, location, locationLabel, query, radiusMiles, selectedGames, sort, viewMode]);
+  }, [dateFilter, location, locationLabel, query, radiusMiles, selectedGames, viewMode]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
     setSelectedEventId(null);
-  }, [dateFilter, query, radiusMiles, selectedGames, sort]);
+    setHighlightedEventId(null);
+  }, [dateFilter, query, radiusMiles, selectedGames]);
 
   const visibleEvents = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -472,11 +455,13 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       ].filter(Boolean).join(" ").toLowerCase();
       return text.includes(normalizedQuery);
     });
-    return sortEvents(filtered, sort);
-  }, [dateFilter, events, query, selectedGames, sort]);
+    return sortEvents(filtered);
+  }, [dateFilter, events, query, selectedGames]);
 
   const pagedEvents = visibleEvents.slice(0, visibleCount);
+  const eventGroups = groupEventsByDate(pagedEvents);
   const mappableEvents = visibleEvents.filter((event) => event.venue?.latitude != null && event.venue.longitude != null);
+  const activeEventId = highlightedEventId ?? selectedEventId;
 
   async function searchPlace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -492,8 +477,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       }
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
-      setLocationAddress(result.address);
       setPlaceQuery(normalized);
+      setLocationEditorOpen(false);
     } catch {
       setLocationNotice("Place search is temporarily unavailable. You can still use your current location.");
     } finally {
@@ -513,8 +498,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 12_000 });
       setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       setLocationLabel("Current location");
-      setLocationAddress(null);
       setPlaceQuery("Current location");
+      setLocationEditorOpen(false);
     } catch {
       setLocationNotice("We could not access your location. Enter a city or ZIP code instead.");
     } finally {
@@ -554,7 +539,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setHomeLocation(result);
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
-      setLocationAddress(normalized);
       setPlaceQuery(normalized);
       setLocationNotice(null);
     } catch {
@@ -584,15 +568,24 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     }
     setLocation({ latitude: result.latitude, longitude: result.longitude });
     setLocationLabel(result.label);
-    setLocationAddress(homeAddress);
     setPlaceQuery(homeAddress);
     setLocationNotice(null);
+    setLocationEditorOpen(false);
   }
 
   const handleMapSelect = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
+    setHighlightedEventId(null);
     if (window.innerWidth < 1024) setViewMode("list");
     window.requestAnimationFrame(() => document.getElementById(`event-${eventId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }, []);
+
+  const handleListSelect = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+  }, []);
+
+  const handleClearSelectedEvent = useCallback(() => {
+    setSelectedEventId(null);
   }, []);
 
   const emptyState = selectedGames.length === 0 ? {
@@ -681,79 +674,93 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         <h1 className="sr-only">Town Map events</h1>
 
         <section aria-label="Location and event filters" className="border-b pb-4">
-          <form onSubmit={searchPlace} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 lg:grid-cols-[minmax(13rem,1fr)_8rem_auto]">
-            <div className="relative col-span-2 lg:col-span-1">
-              <Label htmlFor="place-search" className="sr-only">City or ZIP code</Label>
-              {isHomeLocation
-                ? <House className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                : <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />}
-              <Input
-                id="place-search"
-                value={placeQuery}
-                onChange={(event) => setPlaceQuery(event.target.value)}
-                placeholder="City, state, or ZIP code"
-                autoComplete="postal-code"
-                className={`h-11 pl-10 ${homeAddress && !isHomeLocation ? "pr-11" : ""}`}
-              />
-              {homeAddress && !isHomeLocation && (
-                <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 size-9" onClick={useHomeLocation} aria-label="Use saved home">
-                  <House />
-                </Button>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="radius" className="sr-only">Search radius</Label>
-              <select
-                id="radius"
-                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                value={radiusMiles}
-                onChange={(event) => setRadiusMiles(Number(event.target.value))}
-              >
-                {[10, 25, 50, 100].map((radius) => <option key={radius} value={radius}>{radius} miles</option>)}
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <Button type="submit" className="h-11 flex-1 px-4" disabled={!placeQuery.trim() || locationStatus === "searching"}>
-                {locationStatus === "searching" ? "Searching…" : "Search"}
-              </Button>
-              <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
-                <LocateFixed />
-              </Button>
-            </div>
-          </form>
-
-          <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-[minmax(14rem,1fr)_13rem_10rem_10rem]">
-            <div className="relative col-span-2 lg:col-span-1">
-              <Label className="sr-only" htmlFor="event-search">Search events</Label>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="relative">
+              <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 id="event-search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Event, game, store, or format"
+                placeholder="Search events or venues"
                 className="h-11 pr-11 pl-10"
               />
               {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
             </div>
-            <GameMultiSelect value={selectedGames} onChange={setSelectedGames} />
-            <div>
-              <Label className="sr-only" htmlFor="event-date">Date</Label>
-              <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilter)}>
-                <SelectTrigger id="event-date" aria-label="Date" className="min-h-11 w-full px-3"><SelectValue /></SelectTrigger>
-                <SelectContent position="popper">{DATE_OPTIONS.map((option) => <SelectItem className="min-h-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-              </Select>
+
+            <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="h-11 w-full justify-between gap-2 px-3 font-normal sm:w-auto sm:max-w-72">
+                  <span className="flex min-w-0 items-center gap-2">
+                    {isHomeLocation ? <House className="shrink-0" /> : <MapPin className="shrink-0" />}
+                    <span className="truncate">{locationLabel}</span>
+                  </span>
+                  <ChevronDown className="shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
+                <PopoverHeader>
+                  <PopoverTitle>Search location</PopoverTitle>
+                  <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
+                </PopoverHeader>
+                <form onSubmit={searchPlace} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="place-search">City, state, or ZIP code</Label>
+                    <Input
+                      id="place-search"
+                      value={placeQuery}
+                      onChange={(event) => setPlaceQuery(event.target.value)}
+                      placeholder="Chicago, IL"
+                      autoComplete="postal-code"
+                      className="h-11"
+                      autoFocus
+                    />
+                  </div>
+                  {locationNotice && (
+                    <p role="status" className="flex items-start gap-1 text-xs text-destructive">
+                      <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+                      {locationStatus === "searching" ? "Searching…" : "Search"}
+                    </Button>
+                    <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
+                      <LocateFixed />
+                    </Button>
+                  </div>
+                  {homeAddress && !isHomeLocation && (
+                    <Button type="button" variant="ghost" className="min-h-11 w-full justify-start px-3" onClick={useHomeLocation}>
+                      <House /> Use saved home
+                    </Button>
+                  )}
+                </form>
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-full overflow-x-auto pb-1 sm:pb-0">
+              <DateFilters value={dateFilter} onChange={setDateFilter} />
             </div>
-            <div className="col-span-2 lg:col-span-1">
-              <Label className="sr-only" htmlFor="event-sort">Sort events</Label>
-              <Select value={sort} onValueChange={(value) => setSort(value as SortOption)}>
-                <SelectTrigger id="event-sort" aria-label="Sort events" className="min-h-11 w-full px-3"><SelectValue /></SelectTrigger>
-                <SelectContent position="popper">{SORT_OPTIONS.map((option) => <SelectItem className="min-h-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-              </Select>
+            <div className="flex items-center justify-between gap-2 sm:justify-end">
+              <GameFilters value={selectedGames} onChange={setSelectedGames} />
+              <div>
+                <Label htmlFor="radius" className="sr-only">Search radius</Label>
+                <select
+                  id="radius"
+                  className="h-11 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  value={radiusMiles}
+                  onChange={(event) => setRadiusMiles(Number(event.target.value))}
+                >
+                  {[10, 25, 50, 100].map((radius) => <option key={radius} value={radius}>{radius} mi</option>)}
+                </select>
+              </div>
             </div>
           </div>
 
           {locationNotice && (
-            <p role="status" className="mt-2 inline-flex items-center gap-1 text-xs text-destructive">
+            <p role="status" className="mt-2 inline-flex items-center gap-1 text-xs text-destructive empty:hidden">
               <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
             </p>
           )}
@@ -763,7 +770,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
           <h2 id="events-heading" className="sr-only">Events</h2>
           <div className="flex min-h-14 items-center justify-between gap-3 border-b py-2 text-sm">
             <p className="text-muted-foreground">
-              {status === "loading" ? "Finding events…" : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"}`}
+              {status === "loading" ? "Finding events…" : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel}`}
               {status === "preview" ? " · preview data" : ""}
             </p>
             <div className="flex lg:hidden" aria-label="Choose results view">
@@ -787,9 +794,26 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                 </Empty>
               ) : (
                 <>
-                  <ol className="divide-y border-b" aria-label="Event results">
-                    {pagedEvents.map((event) => <EventRow key={event.id} event={event} selected={event.id === selectedEventId} />)}
-                  </ol>
+                  <div className="border-b" aria-label="Event results">
+                    {eventGroups.map((group) => (
+                      <section key={group.key} aria-labelledby={`date-${group.key}`}>
+                        <h3 id={`date-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                          {group.label}
+                        </h3>
+                        <ol className="divide-y">
+                          {group.events.map((event) => (
+                            <EventRow
+                              key={event.id}
+                              event={event}
+                              active={event.id === activeEventId}
+                              onPreview={setHighlightedEventId}
+                              onSelect={handleListSelect}
+                            />
+                          ))}
+                        </ol>
+                      </section>
+                    ))}
+                  </div>
                   {visibleCount < visibleEvents.length && (
                     <div className="py-5 text-center">
                       <Button variant="outline" className="min-h-11 px-5" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
@@ -808,7 +832,16 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                 <div className="grid h-[28rem] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
               ) : (
                 <Suspense fallback={<div className="grid h-[28rem] place-items-center border bg-muted/20 text-sm text-muted-foreground">Loading the map…</div>}>
-                  <EventMap center={location} events={mappableEvents} active={viewMode === "map" || window.innerWidth >= 1024} selectedEventId={selectedEventId} onSelect={handleMapSelect} />
+                  <EventMap
+                    center={location}
+                    events={mappableEvents}
+                    active={viewMode === "map" || window.innerWidth >= 1024}
+                    activeEventId={activeEventId}
+                    selectedEventId={selectedEventId}
+                    onSelect={handleMapSelect}
+                    onPreview={setHighlightedEventId}
+                    onDeselect={handleClearSelectedEvent}
+                  />
                 </Suspense>
               )}
             </div>
