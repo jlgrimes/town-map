@@ -477,6 +477,15 @@ export function App() {
         Skip to events
       </a>
 
+      <header className="border-b">
+        <div className="mx-auto flex h-14 max-w-[90rem] items-center px-4 sm:px-6 lg:px-8">
+          <a href="/" className="inline-flex items-center gap-2 text-sm font-semibold" aria-label="Town Map home">
+            <img src="/town-map-sprite.png" alt="" className="size-8 object-contain" />
+            <span>Town Map</span>
+          </a>
+        </div>
+      </header>
+
       <main id="main-content" className="mx-auto max-w-[90rem] px-4 py-4 sm:px-6 lg:px-8">
         <h1 className="sr-only">Town Map events</h1>
 
