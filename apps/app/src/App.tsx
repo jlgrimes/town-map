@@ -476,7 +476,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   }, [dateFilter, events, query, selectedGames, sort]);
 
   const pagedEvents = visibleEvents.slice(0, visibleCount);
-  const mappableEvents = visibleEvents.filter((event) => event.venue?.latitude != null && event.venue.longitude != null).slice(0, 120);
+  const mappableEvents = visibleEvents.filter((event) => event.venue?.latitude != null && event.venue.longitude != null);
 
   async function searchPlace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -811,7 +811,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                   <EventMap center={location} events={mappableEvents} active={viewMode === "map" || window.innerWidth >= 1024} selectedEventId={selectedEventId} onSelect={handleMapSelect} />
                 </Suspense>
               )}
-              {mappableEvents.length > 0 && mappableEvents.length < visibleEvents.length && <p className="mt-2 text-xs text-muted-foreground">{mappableEvents.length} of {visibleEvents.length} events include map coordinates.</p>}
             </div>
           </div>
         </section>
