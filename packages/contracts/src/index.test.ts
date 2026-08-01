@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { CoverageResponseSchema, EventPageSchema, EventQuerySchema, UserPreferencesSchema } from "./index.js";
+import { CoverageResponseSchema, EventPageSchema, EventQuerySchema, GameSchema, SourceSchema, UserPreferencesSchema } from "./index.js";
 
 describe("event API contracts", () => {
   it("requires latitude and longitude together", () => {
     expect(EventQuerySchema.safeParse({ latitude: 41.88 }).success).toBe(false);
     expect(EventQuerySchema.safeParse({ longitude: -87.63 }).success).toBe(false);
     expect(EventQuerySchema.safeParse({ latitude: 41.88, longitude: -87.63 }).success).toBe(true);
+  });
+
+  it("accepts One Piece and Riftbound games and sources", () => {
+    expect(GameSchema.parse("onepiece")).toBe("onepiece");
+    expect(GameSchema.parse("riftbound")).toBe("riftbound");
+    expect(SourceSchema.parse("bandai-tcg-plus")).toBe("bandai-tcg-plus");
+    expect(SourceSchema.parse("riftbound-locator")).toBe("riftbound-locator");
   });
 
   it("accepts cursor-paginated event responses", () => {

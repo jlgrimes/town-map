@@ -222,6 +222,31 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1))
 
+  services/ingest-onepiece:
+    dependencies:
+      '@town-map/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@town-map/ingestion':
+        specifier: workspace:*
+        version: link:../../packages/ingestion
+      date-fns-tz:
+        specifier: ^3.2.0
+        version: 3.2.0(date-fns@4.4.0)
+    devDependencies:
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.1)(typescript@5.9.3)
+      tsx:
+        specifier: 4.23.1
+        version: 4.23.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1))
+
   services/ingest-pokemon:
     dependencies:
       '@town-map/contracts':
@@ -243,6 +268,28 @@ importers:
       '@types/tz-lookup':
         specifier: ^6.1.2
         version: 6.1.2
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.1)(typescript@5.9.3)
+      tsx:
+        specifier: 4.23.1
+        version: 4.23.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1))
+
+  services/ingest-riftbound:
+    dependencies:
+      '@town-map/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@town-map/ingestion':
+        specifier: workspace:*
+        version: link:../../packages/ingestion
+    devDependencies:
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.1)(typescript@5.9.3)

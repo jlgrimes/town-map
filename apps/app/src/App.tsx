@@ -39,7 +39,7 @@ import { GameIcon } from "./GameIcon";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
-const ALL_GAMES: Game[] = ["pokemon", "magic", "yugioh"];
+const ALL_GAMES: Game[] = ["pokemon", "magic", "yugioh", "onepiece", "riftbound"];
 const PAGE_SIZE = 24;
 
 type DateFilter = "all" | "today" | "tomorrow" | "week";
@@ -188,7 +188,7 @@ function GameFilters({ value, onChange }: { value: Game[]; onChange: (games: Gam
   }
 
   return (
-    <fieldset className="flex items-center gap-1" aria-label="Games">
+    <fieldset className="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Games">
       <legend className="sr-only">Games</legend>
       {ALL_GAMES.map((game) => {
         const selected = value.includes(game);
@@ -576,8 +576,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const handleMapSelect = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
     setHighlightedEventId(null);
-    if (window.innerWidth < 1024) setViewMode("list");
-    window.requestAnimationFrame(() => document.getElementById(`event-${eventId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
   }, []);
 
   const handleListSelect = useCallback((eventId: string) => {
@@ -606,12 +604,12 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   };
 
   return (
-    <div className="min-h-svh bg-background text-foreground">
+    <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <a href="#main-content" className="sr-only z-[1000] bg-background px-4 py-3 font-semibold focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
         Skip to events
       </a>
 
-      <header className="border-b">
+      <header className="shrink-0 border-b">
         <div className="mx-auto flex h-14 max-w-[90rem] items-center px-4 sm:px-6 lg:px-8">
           <a href="/" className="inline-flex items-center gap-2 text-sm font-semibold" aria-label="Town Map home">
             <img src="/town-map.png" alt="" className="size-8 object-contain" />
@@ -670,10 +668,10 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         </div>
       </header>
 
-      <main id="main-content" className="mx-auto max-w-[90rem] px-4 py-4 sm:px-6 lg:px-8">
+      <main id="main-content" className="mx-auto flex min-h-0 w-full max-w-[90rem] flex-1 flex-col px-4 py-3 sm:px-6 lg:px-8">
         <h1 className="sr-only">Town Map events</h1>
 
-        <section aria-label="Location and event filters" className="border-b pb-4">
+        <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div className="relative">
               <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
@@ -766,9 +764,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
           )}
         </section>
 
-        <section aria-labelledby="events-heading">
+        <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
           <h2 id="events-heading" className="sr-only">Events</h2>
-          <div className="flex min-h-14 items-center justify-between gap-3 border-b py-2 text-sm">
+          <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b py-2 text-sm">
             <p className="text-muted-foreground">
               {status === "loading" ? "Finding events…" : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel}`}
               {status === "preview" ? " · preview data" : ""}
@@ -779,8 +777,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             </div>
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,0.88fr)_minmax(25rem,1.12fr)] lg:items-start">
-            <div className={`${viewMode === "map" ? "hidden" : "block"} min-w-0 lg:block`}>
+          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,0.88fr)_minmax(25rem,1.12fr)]">
+            <div className={`${viewMode === "map" ? "hidden" : "block"} min-h-0 min-w-0 overflow-y-auto overscroll-contain lg:block`}>
               {status === "loading" ? (
                 <LoadingCards />
               ) : visibleEvents.length === 0 ? (
@@ -823,15 +821,18 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                   )}
                 </>
               )}
+              <p className="px-2 py-5 text-xs text-muted-foreground">
+                Verify details with the organizer.
+              </p>
             </div>
 
-            <div className={`${viewMode === "list" ? "hidden" : "block"} pt-5 lg:sticky lg:top-4 lg:block lg:h-[calc(100svh-2rem)] lg:pt-0`}>
+            <div className={`${viewMode === "list" ? "hidden" : "block"} min-h-0 overflow-hidden lg:block`}>
               {status === "loading" ? (
-                <div className="grid h-[28rem] place-items-center border bg-muted/20 text-sm text-muted-foreground">Preparing the map…</div>
+                <div className="grid h-full min-h-0 place-items-center border bg-muted/20 text-sm text-muted-foreground">Preparing the map…</div>
               ) : mappableEvents.length === 0 ? (
-                <div className="grid h-[28rem] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
+                <div className="grid h-full min-h-0 place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
               ) : (
-                <Suspense fallback={<div className="grid h-[28rem] place-items-center border bg-muted/20 text-sm text-muted-foreground">Loading the map…</div>}>
+                <Suspense fallback={<div className="grid h-full min-h-0 place-items-center border bg-muted/20 text-sm text-muted-foreground">Loading the map…</div>}>
                   <EventMap
                     center={location}
                     events={mappableEvents}
@@ -847,10 +848,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             </div>
           </div>
         </section>
-
-        <p className="py-5 text-xs text-muted-foreground">
-          Verify details with the organizer. Map and place search © OpenStreetMap contributors.
-        </p>
       </main>
     </div>
   );
