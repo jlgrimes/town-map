@@ -89,8 +89,19 @@ export const EventQuerySchema = z.object({
   longitude: z.coerce.number().min(-180).max(180).optional(),
   radiusMiles: z.coerce.number().positive().max(500).default(50),
   limit: z.coerce.number().int().positive().max(250).default(100),
-});
+  cursor: z.string().max(1024).optional(),
+}).refine(
+  ({ latitude, longitude }) => (latitude === undefined) === (longitude === undefined),
+  { message: "Latitude and longitude must be provided together", path: ["latitude"] },
+);
 export type EventQuery = z.infer<typeof EventQuerySchema>;
+
+export const EventPageSchema = z.object({
+  events: z.array(EventListItemSchema),
+  count: z.number().int().nonnegative(),
+  nextCursor: z.string().nullable(),
+});
+export type EventPage = z.infer<typeof EventPageSchema>;
 
 export const GAME_LABELS: Record<Game, string> = {
   pokemon: "Pokémon",

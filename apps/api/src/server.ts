@@ -1,6 +1,6 @@
 import cors from "@fastify/cors";
 import { EventQuerySchema, GAME_LABELS, GameSchema } from "@town-map/contracts";
-import { closePool, getPool, listEvents } from "@town-map/db";
+import { closePool, getPool, InvalidEventCursorError, listEvents } from "@town-map/db";
 import Fastify from "fastify";
 
 const app = Fastify({ logger: true });
@@ -42,8 +42,14 @@ app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async
   if (!process.env.DATABASE_URL) {
     return reply.code(503).send({ error: "The event database is not configured." });
   }
-  const events = await listEvents(parsed.data);
-  return { events, count: events.length };
+  try {
+    return await listEvents(parsed.data);
+  } catch (error) {
+    if (error instanceof InvalidEventCursorError) {
+      return reply.code(400).send({ error: error.message });
+    }
+    throw error;
+  }
 });
 
 app.addHook("onClose", async () => closePool());

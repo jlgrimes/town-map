@@ -1,4 +1,4 @@
-import type { EventListItem, EventQuery, EventSource, NormalizedEvent } from "@town-map/contracts";
+import type { EventListItem, EventPage, EventQuery, EventSource, NormalizedEvent } from "@town-map/contracts";
 import { Pool, type PoolClient } from "pg";
 
 let pool: Pool | undefined;
@@ -95,16 +95,8 @@ export async function upsertEvent(source: EventSource, event: NormalizedEvent) {
   }
 }
 
-function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRadians(lat2 - lat1);
-  const dLon = toRadians(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 type EventRow = Omit<EventListItem, "distanceMiles" | "venue"> & {
+  distanceMeters: number | null;
   priceAmount: string | null;
   venueName: string | null;
   venueAddress: string | null;
@@ -116,82 +108,189 @@ type EventRow = Omit<EventListItem, "distanceMiles" | "venue"> & {
   venueWebsite: string | null;
 };
 
-export async function listEvents(query: EventQuery): Promise<EventListItem[]> {
+type EventCursor = {
+  version: 1;
+  kind: "spatial" | "chronological";
+  scope: string;
+  snapshotFrom: string;
+  startsAt: string;
+  id: string;
+  distanceMeters?: number;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const METERS_PER_MILE = 1609.344;
+
+export class InvalidEventCursorError extends Error {
+  constructor() {
+    super("The event cursor is invalid or does not match this query");
+    this.name = "InvalidEventCursorError";
+  }
+}
+
+function encodeCursor(cursor: EventCursor) {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeCursor(value: string | undefined, expectedKind: EventCursor["kind"], expectedScope: string): EventCursor | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<EventCursor>;
+    const validDistance = expectedKind === "chronological"
+      ? parsed.distanceMeters === undefined
+      : typeof parsed.distanceMeters === "number" && Number.isFinite(parsed.distanceMeters) && parsed.distanceMeters >= 0;
+    if (
+      parsed.version !== 1
+      || parsed.kind !== expectedKind
+      || parsed.scope !== expectedScope
+      || typeof parsed.snapshotFrom !== "string"
+      || !Number.isFinite(Date.parse(parsed.snapshotFrom))
+      || typeof parsed.startsAt !== "string"
+      || !Number.isFinite(Date.parse(parsed.startsAt))
+      || typeof parsed.id !== "string"
+      || !UUID_PATTERN.test(parsed.id)
+      || !validDistance
+    ) throw new InvalidEventCursorError();
+    return parsed as EventCursor;
+  } catch (error) {
+    if (error instanceof InvalidEventCursorError) throw error;
+    throw new InvalidEventCursorError();
+  }
+}
+
+function cursorScope(query: EventQuery) {
+  return JSON.stringify({
+    games: [...query.games].sort(),
+    to: query.to ?? null,
+    latitude: query.latitude ?? null,
+    longitude: query.longitude ?? null,
+    radiusMiles: query.latitude === undefined ? null : query.radiusMiles,
+  });
+}
+
+const eventSelect = `
+  e.id, e.source, e.source_event_id AS "sourceEventId", e.game, e.title,
+  e.description, e.starts_at AS "startsAt", e.ends_at AS "endsAt",
+  e.timezone, e.status, e.format, e.event_type AS "eventType",
+  e.source_url AS "sourceUrl", e.registration_url AS "registrationUrl",
+  e.price_amount AS "priceAmount",
+  e.price_currency AS "priceCurrency", e.capacity, e.is_online AS "isOnline",
+  v.name AS "venueName", v.address AS "venueAddress", v.city AS "venueCity",
+  v.region AS "venueRegion", v.postal_code AS "venuePostalCode",
+  v.latitude AS "venueLatitude", v.longitude AS "venueLongitude",
+  v.website AS "venueWebsite"`;
+
+function toEventListItem(row: EventRow): EventListItem {
+  return {
+    id: row.id,
+    source: row.source,
+    sourceEventId: row.sourceEventId,
+    game: row.game,
+    title: row.title,
+    description: row.description,
+    startsAt: new Date(row.startsAt).toISOString(),
+    endsAt: row.endsAt ? new Date(row.endsAt).toISOString() : null,
+    timezone: row.timezone,
+    status: row.status,
+    format: row.format,
+    eventType: row.eventType,
+    sourceUrl: row.sourceUrl,
+    registrationUrl: row.registrationUrl,
+    priceAmount: row.priceAmount === null ? null : Number(row.priceAmount),
+    priceCurrency: row.priceCurrency,
+    capacity: row.capacity,
+    isOnline: row.isOnline,
+    distanceMiles: row.distanceMeters === null ? null : Math.round((row.distanceMeters / METERS_PER_MILE) * 10) / 10,
+    venue: row.venueName ? {
+      name: row.venueName,
+      address: row.venueAddress,
+      city: row.venueCity,
+      region: row.venueRegion,
+      postalCode: row.venuePostalCode,
+      latitude: row.venueLatitude,
+      longitude: row.venueLongitude,
+      website: row.venueWebsite,
+    } : null,
+  };
+}
+
+export async function listEvents(query: EventQuery, database: Pick<Pool, "query"> = getPool()): Promise<EventPage> {
+  const spatial = query.latitude !== undefined && query.longitude !== undefined;
+  const scope = cursorScope(query);
+  const cursor = decodeCursor(query.cursor, spatial ? "spatial" : "chronological", scope);
+  if (cursor && query.from && Date.parse(cursor.snapshotFrom) !== Date.parse(query.from)) {
+    throw new InvalidEventCursorError();
+  }
+  const snapshotFrom = cursor?.snapshotFrom ?? query.from ?? new Date().toISOString();
   const values: unknown[] = [];
-  const conditions = ["e.starts_at >= $1"];
-  values.push(query.from ?? new Date().toISOString());
+  const addValue = (value: unknown) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+  const conditions = [`e.starts_at >= ${addValue(snapshotFrom)}`];
   if (query.to) {
-    values.push(query.to);
-    conditions.push(`e.starts_at <= $${values.length}`);
+    conditions.push(`e.starts_at <= ${addValue(query.to)}`);
   }
   if (query.games.length) {
-    values.push(query.games);
-    conditions.push(`e.game = ANY($${values.length}::text[])`);
+    conditions.push(`e.game = ANY(${addValue(query.games)}::text[])`);
   }
-  values.push(Math.max(query.limit * 8, 500));
-  const result = await getPool().query<EventRow>(
-    `SELECT
-       e.id, e.source, e.source_event_id AS "sourceEventId", e.game, e.title,
-       e.description, e.starts_at AS "startsAt", e.ends_at AS "endsAt",
-       e.timezone, e.status, e.format, e.event_type AS "eventType",
-       e.source_url AS "sourceUrl", e.registration_url AS "registrationUrl",
-       e.price_amount AS "priceAmount",
-       e.price_currency AS "priceCurrency", e.capacity, e.is_online AS "isOnline",
-       v.name AS "venueName", v.address AS "venueAddress", v.city AS "venueCity",
-       v.region AS "venueRegion", v.postal_code AS "venuePostalCode",
-       v.latitude AS "venueLatitude", v.longitude AS "venueLongitude",
-       v.website AS "venueWebsite"
-     FROM events e
-     LEFT JOIN venues v ON v.id = e.venue_id
-     WHERE ${conditions.join(" AND ")}
-     ORDER BY e.starts_at ASC
-     LIMIT $${values.length}`,
-    values,
-  );
 
-  return result.rows
-    .map((row) => {
-      const canMeasure = query.latitude !== undefined && query.longitude !== undefined
-        && row.venueLatitude !== null && row.venueLongitude !== null;
-      const distance = canMeasure
-        ? distanceMiles(query.latitude!, query.longitude!, row.venueLatitude!, row.venueLongitude!)
-        : null;
-      return {
-        id: row.id,
-        source: row.source,
-        sourceEventId: row.sourceEventId,
-        game: row.game,
-        title: row.title,
-        description: row.description,
-        startsAt: new Date(row.startsAt).toISOString(),
-        endsAt: row.endsAt ? new Date(row.endsAt).toISOString() : null,
-        timezone: row.timezone,
-        status: row.status,
-        format: row.format,
-        eventType: row.eventType,
-        sourceUrl: row.sourceUrl,
-        registrationUrl: row.registrationUrl,
-        priceAmount: row.priceAmount === null ? null : Number(row.priceAmount),
-        priceCurrency: row.priceCurrency,
-        capacity: row.capacity,
-        isOnline: row.isOnline,
-        distanceMiles: distance === null ? null : Math.round(distance * 10) / 10,
-        venue: row.venueName ? {
-          name: row.venueName,
-          address: row.venueAddress,
-          city: row.venueCity,
-          region: row.venueRegion,
-          postalCode: row.venuePostalCode,
-          latitude: row.venueLatitude,
-          longitude: row.venueLongitude,
-          website: row.venueWebsite,
-        } : null,
-      } satisfies EventListItem;
+  let sql: string;
+
+  if (spatial) {
+    const longitude = addValue(query.longitude);
+    const latitude = addValue(query.latitude);
+    const radiusMeters = addValue(query.radiusMiles * METERS_PER_MILE);
+    conditions.push("v.location IS NOT NULL");
+    conditions.push(`ST_DWithin(v.location, ST_Point(${longitude}, ${latitude}, 4326)::geography, ${radiusMeters})`);
+
+    const cursorCondition = cursor
+      ? `WHERE ("distanceMeters", "startsAt", id) > (${addValue(cursor.distanceMeters)}::double precision, ${addValue(cursor.startsAt)}::timestamptz, ${addValue(cursor.id)}::uuid)`
+      : "";
+    const limit = addValue(query.limit + 1);
+    sql = `WITH candidates AS (
+      SELECT ${eventSelect},
+        ST_Distance(v.location, ST_Point(${longitude}, ${latitude}, 4326)::geography) AS "distanceMeters"
+      FROM events e
+      JOIN venues v ON v.id = e.venue_id
+      WHERE ${conditions.join(" AND ")}
+    )
+    SELECT * FROM candidates
+    ${cursorCondition}
+    ORDER BY "distanceMeters" ASC, "startsAt" ASC, id ASC
+    LIMIT ${limit}`;
+  } else {
+    if (cursor) {
+      conditions.push(`(e.starts_at, e.id) > (${addValue(cursor.startsAt)}::timestamptz, ${addValue(cursor.id)}::uuid)`);
+    }
+    const limit = addValue(query.limit + 1);
+    sql = `SELECT ${eventSelect}, NULL::double precision AS "distanceMeters"
+      FROM events e
+      LEFT JOIN venues v ON v.id = e.venue_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY e.starts_at ASC, e.id ASC
+      LIMIT ${limit}`;
+  }
+
+  const result = await database.query<EventRow>(sql, values);
+  const hasNextPage = result.rows.length > query.limit;
+  const pageRows = result.rows.slice(0, query.limit);
+  const lastRow = pageRows.at(-1);
+  const nextCursor = hasNextPage && lastRow
+    ? encodeCursor({
+      version: 1,
+      kind: spatial ? "spatial" : "chronological",
+      scope,
+      snapshotFrom,
+      startsAt: new Date(lastRow.startsAt).toISOString(),
+      id: lastRow.id,
+      ...(spatial ? { distanceMeters: Number(lastRow.distanceMeters) } : {}),
     })
-    .filter((event) => event.distanceMiles === null || event.distanceMiles <= query.radiusMiles)
-    .sort((a, b) => {
-      if (a.distanceMiles !== null && b.distanceMiles !== null) return a.distanceMiles - b.distanceMiles;
-      return a.startsAt.localeCompare(b.startsAt);
-    })
-    .slice(0, query.limit);
+    : null;
+
+  return {
+    events: pageRows.map(toEventListItem),
+    count: pageRows.length,
+    nextCursor,
+  };
 }

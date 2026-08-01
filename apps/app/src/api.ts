@@ -1,4 +1,4 @@
-import type { EventListItem, Game } from "@town-map/contracts";
+import type { EventPage, Game } from "@town-map/contracts";
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 
@@ -17,7 +17,7 @@ export async function fetchEvents(options: {
   }
   const response = await fetch(`${API_URL}/v1/events?${params}`, { signal: options.signal });
   if (!response.ok) throw new Error(`Event API returned ${response.status}`);
-  return response.json() as Promise<{ events: EventListItem[]; count: number }>;
+  return response.json() as Promise<EventPage>;
 }
 
 export async function geocodePlace(query: string, signal?: AbortSignal) {
