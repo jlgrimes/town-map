@@ -1,6 +1,6 @@
 import cors from "@fastify/cors";
 import { EventQuerySchema, GAME_LABELS, GameSchema } from "@town-map/contracts";
-import { closePool, getPool, InvalidEventCursorError, listEvents } from "@town-map/db";
+import { closePool, getPool, InvalidEventCursorError, listCoverage, listEvents } from "@town-map/db";
 import Fastify from "fastify";
 
 const app = Fastify({ logger: true });
@@ -32,6 +32,13 @@ app.get("/health", async (_request, reply) => {
 app.get("/v1/games", async () => ({
   games: GameSchema.options.map((id) => ({ id, label: GAME_LABELS[id] })),
 }));
+
+app.get("/v1/coverage", async (_request, reply) => {
+  if (!process.env.DATABASE_URL) {
+    return reply.code(503).send({ error: "The event database is not configured." });
+  }
+  return listCoverage();
+});
 
 app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {
   const games = request.query.games?.split(",").filter(Boolean) ?? [];

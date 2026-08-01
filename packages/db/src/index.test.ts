@@ -1,7 +1,7 @@
 import type { EventQuery } from "@town-map/contracts";
 import type { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { InvalidEventCursorError, listEvents } from "./index.js";
+import { InvalidEventCursorError, listCoverage, listEvents } from "./index.js";
 
 const ids = [
   "10000000-0000-4000-8000-000000000001",
@@ -113,6 +113,72 @@ describe("listEvents", () => {
     await expect(listEvents({ ...spatialQuery, cursor: chronologicalPage.nextCursor! }, database)).rejects.toBeInstanceOf(InvalidEventCursorError);
     await expect(listEvents({ ...spatialQuery, radiusMiles: 50, cursor: firstSpatialCursor() }, database)).rejects.toBeInstanceOf(InvalidEventCursorError);
     expect(query).not.toHaveBeenCalled();
+  });
+});
+
+describe("listCoverage", () => {
+  it("reports region freshness and source event totals without exposing collector config", async () => {
+    const now = Date.now();
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [
+        {
+          source: "wotc-locator",
+          regionKey: "fresh",
+          label: "Fresh",
+          countryCode: "US",
+          enabled: true,
+          cadenceMinutes: 360,
+          nextRunAt: new Date(now + 60_000),
+          leaseExpiresAt: null,
+          lastStartedAt: new Date(now - 3_600_000),
+          lastSuccessAt: new Date(now - 3_600_000),
+          lastFailureAt: null,
+        },
+        {
+          source: "wotc-locator",
+          regionKey: "failing",
+          label: "Failing",
+          countryCode: "CA",
+          enabled: true,
+          cadenceMinutes: 360,
+          nextRunAt: new Date(now - 60_000),
+          leaseExpiresAt: null,
+          lastStartedAt: new Date(now - 30_000),
+          lastSuccessAt: new Date(now - 3_600_000),
+          lastFailureAt: new Date(now - 30_000),
+        },
+        {
+          source: "wotc-locator",
+          regionKey: "disabled",
+          label: "Disabled",
+          countryCode: null,
+          enabled: false,
+          cadenceMinutes: 360,
+          nextRunAt: new Date(now - 60_000),
+          leaseExpiresAt: null,
+          lastStartedAt: null,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+        },
+      ] })
+      .mockResolvedValueOnce({ rows: [{ source: "wotc-locator", upcomingEvents: "42" }] });
+
+    const result = await listCoverage({ query } as never);
+
+    expect(result.regions.map((region) => [region.key, region.status, region.due])).toEqual([
+      ["fresh", "fresh", false],
+      ["failing", "failing", true],
+      ["disabled", "disabled", false],
+    ]);
+    expect(result.sources).toEqual([expect.objectContaining({
+      source: "wotc-locator",
+      totalRegions: 3,
+      enabledRegions: 2,
+      freshRegions: 1,
+      failingRegions: 1,
+      upcomingEvents: 42,
+    })]);
+    expect(JSON.stringify(result)).not.toContain("config");
   });
 });
 

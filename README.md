@@ -26,6 +26,8 @@ Prerequisites: Node.js 22+, pnpm 9+, and PostgreSQL 15+.
 
 The app runs at `http://localhost:5173`; the API runs at `http://localhost:3001`. In development, the app displays clearly labeled preview events when the API or database is unavailable.
 
+The read API exposes `GET /v1/events`, `GET /v1/games`, and `GET /v1/coverage`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details.
+
 ## Collector checks
 
 Collectors use dry-run mode automatically when `DATABASE_URL` is absent:
@@ -81,9 +83,9 @@ The three collector services wake on staggered hourly schedules, but each config
 
 Start with `YUGIOH_STATES=IL` and the example Chicago Magic search center. Expand coverage deliberately after measuring source runtime and request volume. Multiple Magic centers can be passed in `MAGIC_SEARCH_CENTERS_JSON`; Yu-Gi-Oh! accepts comma-separated postal abbreviations in `YUGIOH_STATES`. Pokémon defaults to one worldwide competitive-TCG region; `POKEMON_COUNTRIES=US,CA` splits it into bounded country regions. Removing a configured region disables future jobs for it without deleting previously collected events.
 
-Tune regional scheduling with `COLLECTOR_REGION_CADENCE_MINUTES`, cap work per wake-up with `COLLECTOR_JOB_LIMIT`, and set lease/retry behavior with `COLLECTOR_LEASE_MINUTES` and `COLLECTOR_RETRY_MINUTES`. Do not expand the region lists until request budgets and source permission are understood.
+Tune regional scheduling with `COLLECTOR_REGION_CADENCE_MINUTES`, cap work per wake-up with `COLLECTOR_JOB_LIMIT`, and set lease/retry behavior with `COLLECTOR_LEASE_MINUTES` and `COLLECTOR_RETRY_MINUTES`. `COLLECTOR_ENABLED=false` is an emergency stop. `COLLECTOR_REGION_ALLOWLIST` and `COLLECTOR_MAX_REGION_PRIORITY` support staged activation while disabled catalog entries remain visible through `/v1/coverage`.
 
-Before production-scale collection, review each source's terms, identify the application in its user agent, keep the schedules conservative, and pursue official permission where appropriate.
+Before production-scale collection, review each source's terms, identify the application in its user agent, keep the schedules conservative, and pursue official permission where appropriate. The concrete expansion gates are documented in [docs/global-coverage.md](docs/global-coverage.md).
 
 ## Quality checks
 

@@ -1,4 +1,14 @@
-import type { EventListItem, EventPage, EventQuery, EventSource, NormalizedEvent } from "@town-map/contracts";
+import type {
+  CoverageRegion,
+  CoverageRegionStatus,
+  CoverageResponse,
+  CoverageSource,
+  EventListItem,
+  EventPage,
+  EventQuery,
+  EventSource,
+  NormalizedEvent,
+} from "@town-map/contracts";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 let pool: Pool | undefined;
@@ -180,6 +190,93 @@ export async function finishSync(
      WHERE id = $1`,
     [id, values.status, values.eventsSeen, values.eventsWritten, values.error ?? null],
   );
+}
+
+type CoverageRegionRow = {
+  source: EventSource;
+  regionKey: string;
+  label: string;
+  countryCode: string | null;
+  enabled: boolean;
+  cadenceMinutes: number;
+  nextRunAt: Date;
+  leaseExpiresAt: Date | null;
+  lastStartedAt: Date | null;
+  lastSuccessAt: Date | null;
+  lastFailureAt: Date | null;
+};
+
+function coverageStatus(region: CoverageRegionRow, now: Date): CoverageRegionStatus {
+  if (!region.enabled) return "disabled";
+  if (region.leaseExpiresAt && region.leaseExpiresAt > now) return "running";
+  if (region.lastFailureAt && (!region.lastSuccessAt || region.lastFailureAt > region.lastSuccessAt)) return "failing";
+  if (!region.lastSuccessAt) return "pending";
+  const staleAt = region.lastSuccessAt.getTime() + region.cadenceMinutes * 2 * 60_000;
+  return staleAt < now.getTime() ? "stale" : "fresh";
+}
+
+export async function listCoverage(database: Queryable = getPool()): Promise<CoverageResponse> {
+  const generatedAt = new Date();
+  const [regionResult, eventCountResult] = await Promise.all([
+    database.query<CoverageRegionRow>(
+      `SELECT source, region_key AS "regionKey", label, country_code AS "countryCode",
+         enabled, cadence_minutes AS "cadenceMinutes", next_run_at AS "nextRunAt",
+         lease_expires_at AS "leaseExpiresAt", last_started_at AS "lastStartedAt",
+         last_success_at AS "lastSuccessAt", last_failure_at AS "lastFailureAt"
+       FROM collection_regions
+       ORDER BY source, country_code NULLS LAST, label, region_key`,
+    ),
+    database.query<{ source: EventSource; upcomingEvents: string }>(
+      `SELECT source, count(*)::text AS "upcomingEvents"
+       FROM events
+       WHERE starts_at >= now()
+       GROUP BY source`,
+    ),
+  ]);
+  const regions: CoverageRegion[] = regionResult.rows.map((region) => ({
+    source: region.source,
+    key: region.regionKey,
+    label: region.label,
+    countryCode: region.countryCode,
+    enabled: region.enabled,
+    status: coverageStatus(region, generatedAt),
+    due: region.enabled && region.nextRunAt <= generatedAt
+      && (!region.leaseExpiresAt || region.leaseExpiresAt <= generatedAt),
+    cadenceMinutes: region.cadenceMinutes,
+    nextRunAt: region.nextRunAt.toISOString(),
+    lastStartedAt: region.lastStartedAt?.toISOString() ?? null,
+    lastSuccessAt: region.lastSuccessAt?.toISOString() ?? null,
+    lastFailureAt: region.lastFailureAt?.toISOString() ?? null,
+  }));
+  const upcomingEvents = new Map(eventCountResult.rows.map((row) => [row.source, Number(row.upcomingEvents)]));
+  const sources = new Map<EventSource, CoverageSource>();
+
+  for (const source of new Set([...regions.map((region) => region.source), ...upcomingEvents.keys()])) {
+    const sourceRegions = regions.filter((region) => region.source === source);
+    const latestSuccessAt = sourceRegions
+      .map((region) => region.lastSuccessAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+    sources.set(source, {
+      source,
+      totalRegions: sourceRegions.length,
+      enabledRegions: sourceRegions.filter((region) => region.enabled).length,
+      freshRegions: sourceRegions.filter((region) => region.status === "fresh").length,
+      pendingRegions: sourceRegions.filter((region) => region.status === "pending").length,
+      staleRegions: sourceRegions.filter((region) => region.status === "stale").length,
+      failingRegions: sourceRegions.filter((region) => region.status === "failing").length,
+      runningRegions: sourceRegions.filter((region) => region.status === "running").length,
+      upcomingEvents: upcomingEvents.get(source) ?? 0,
+      latestSuccessAt,
+    });
+  }
+
+  return {
+    generatedAt: generatedAt.toISOString(),
+    sources: [...sources.values()].sort((left, right) => left.source.localeCompare(right.source)),
+    regions,
+  };
 }
 
 async function upsertVenue(client: PoolClient, source: EventSource, event: NormalizedEvent) {

@@ -24,6 +24,44 @@ function validateEvents(collected: NormalizedEvent[]) {
   return collected.map((event) => NormalizedEventSchema.parse(event));
 }
 
+function positiveIntegerEnv(name: string, fallback: number, minimum: number) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < minimum) {
+    throw new Error(`${name} must be an integer greater than or equal to ${minimum}`);
+  }
+  return value;
+}
+
+export function applyRolloutPolicy<TConfig extends Record<string, unknown>>(
+  definitions: RegionalCollectionDefinition<TConfig>[],
+): RegionalCollectionDefinition<TConfig>[] {
+  const globallyEnabled = process.env.COLLECTOR_ENABLED !== "false";
+  const configuredAllowlist = process.env.COLLECTOR_REGION_ALLOWLIST;
+  const allowlist = configuredAllowlist === undefined
+    ? null
+    : new Set(configuredAllowlist.split(",").map((key) => key.trim()).filter(Boolean));
+  const configuredMaxPriority = process.env.COLLECTOR_MAX_REGION_PRIORITY;
+  const maxPriority = configuredMaxPriority === undefined ? null : Number(configuredMaxPriority);
+  if (maxPriority !== null && !Number.isFinite(maxPriority)) {
+    throw new Error("COLLECTOR_MAX_REGION_PRIORITY must be a number");
+  }
+  const keys = new Set<string>();
+
+  return definitions.map((definition) => {
+    if (!definition.key.trim()) throw new Error("Collection region keys cannot be empty");
+    if (keys.has(definition.key)) throw new Error(`Duplicate collection region key: ${definition.key}`);
+    keys.add(definition.key);
+    const priority = definition.priority ?? 100;
+    return {
+      ...definition,
+      enabled: (definition.enabled ?? true)
+        && globallyEnabled
+        && (allowlist === null || allowlist.has(definition.key))
+        && (maxPriority === null || priority <= maxPriority),
+    };
+  });
+}
+
 export async function runCollector(source: EventSource, collect: Collector) {
   const dryRun = process.env.DRY_RUN === "true" || !process.env.DATABASE_URL;
   const syncId = dryRun ? null : await beginSync(source);
@@ -60,9 +98,10 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
   collect: RegionalCollector<TConfig>,
 ) {
   if (!definitions.length) throw new Error(`${source} has no collection regions configured`);
+  const effectiveDefinitions = applyRolloutPolicy(definitions);
   const dryRun = process.env.DRY_RUN === "true" || !process.env.DATABASE_URL;
   if (dryRun) {
-    const enabledDefinitions = definitions.filter((region) => region.enabled ?? true);
+    const enabledDefinitions = effectiveDefinitions.filter((region) => region.enabled);
     let eventsSeen = 0;
     for (const definition of enabledDefinitions) {
       const events = validateEvents(await collect(definition));
@@ -78,9 +117,9 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
     return { regionsProcessed: enabledDefinitions.length, eventsSeen, eventsWritten: 0, dryRun: true };
   }
 
-  const jobLimit = Math.max(1, Number(process.env.COLLECTOR_JOB_LIMIT ?? 8));
-  const leaseMinutes = Math.max(5, Number(process.env.COLLECTOR_LEASE_MINUTES ?? 30));
-  const retryMinutes = Math.max(5, Number(process.env.COLLECTOR_RETRY_MINUTES ?? 30));
+  const jobLimit = positiveIntegerEnv("COLLECTOR_JOB_LIMIT", 8, 1);
+  const leaseMinutes = positiveIntegerEnv("COLLECTOR_LEASE_MINUTES", 30, 5);
+  const retryMinutes = positiveIntegerEnv("COLLECTOR_RETRY_MINUTES", 30, 5);
   const workerId = process.env.COLLECTOR_WORKER_ID ?? `${source}:${process.pid}:${randomUUID()}`;
   const failures: Error[] = [];
   let regionsProcessed = 0;
@@ -88,7 +127,7 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
   let eventsWritten = 0;
 
   try {
-    await registerCollectionRegions(source, definitions);
+    await registerCollectionRegions(source, effectiveDefinitions);
     while (regionsProcessed < jobLimit) {
       const claimed = await claimNextCollectionRegion(source, workerId, leaseMinutes);
       if (!claimed) break;

@@ -103,6 +103,53 @@ export const EventPageSchema = z.object({
 });
 export type EventPage = z.infer<typeof EventPageSchema>;
 
+export const CoverageRegionStatusSchema = z.enum([
+  "disabled",
+  "pending",
+  "running",
+  "fresh",
+  "stale",
+  "failing",
+]);
+export type CoverageRegionStatus = z.infer<typeof CoverageRegionStatusSchema>;
+
+export const CoverageRegionSchema = z.object({
+  source: SourceSchema,
+  key: z.string(),
+  label: z.string(),
+  countryCode: z.string().nullable(),
+  enabled: z.boolean(),
+  status: CoverageRegionStatusSchema,
+  due: z.boolean(),
+  cadenceMinutes: z.number().int().positive(),
+  nextRunAt: z.string().datetime(),
+  lastStartedAt: z.string().datetime().nullable(),
+  lastSuccessAt: z.string().datetime().nullable(),
+  lastFailureAt: z.string().datetime().nullable(),
+});
+export type CoverageRegion = z.infer<typeof CoverageRegionSchema>;
+
+export const CoverageSourceSchema = z.object({
+  source: SourceSchema,
+  totalRegions: z.number().int().nonnegative(),
+  enabledRegions: z.number().int().nonnegative(),
+  freshRegions: z.number().int().nonnegative(),
+  pendingRegions: z.number().int().nonnegative(),
+  staleRegions: z.number().int().nonnegative(),
+  failingRegions: z.number().int().nonnegative(),
+  runningRegions: z.number().int().nonnegative(),
+  upcomingEvents: z.number().int().nonnegative(),
+  latestSuccessAt: z.string().datetime().nullable(),
+});
+export type CoverageSource = z.infer<typeof CoverageSourceSchema>;
+
+export const CoverageResponseSchema = z.object({
+  generatedAt: z.string().datetime(),
+  sources: z.array(CoverageSourceSchema),
+  regions: z.array(CoverageRegionSchema),
+});
+export type CoverageResponse = z.infer<typeof CoverageResponseSchema>;
+
 export const GAME_LABELS: Record<Game, string> = {
   pokemon: "Pokémon",
   magic: "Magic",

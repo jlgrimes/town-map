@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EventPageSchema, EventQuerySchema } from "./index.js";
+import { CoverageResponseSchema, EventPageSchema, EventQuerySchema } from "./index.js";
 
 describe("event API contracts", () => {
   it("requires latitude and longitude together", () => {
@@ -11,5 +11,37 @@ describe("event API contracts", () => {
   it("accepts cursor-paginated event responses", () => {
     expect(EventPageSchema.safeParse({ events: [], count: 0, nextCursor: null }).success).toBe(true);
     expect(EventPageSchema.safeParse({ events: [], count: 0, nextCursor: "opaque" }).success).toBe(true);
+  });
+
+  it("accepts coverage freshness responses", () => {
+    expect(CoverageResponseSchema.safeParse({
+      generatedAt: "2030-01-01T12:00:00.000Z",
+      sources: [{
+        source: "wotc-locator",
+        totalRegions: 1,
+        enabledRegions: 1,
+        freshRegions: 1,
+        pendingRegions: 0,
+        staleRegions: 0,
+        failingRegions: 0,
+        runningRegions: 0,
+        upcomingEvents: 12,
+        latestSuccessAt: "2030-01-01T11:00:00.000Z",
+      }],
+      regions: [{
+        source: "wotc-locator",
+        key: "us-il-chicago",
+        label: "Chicago",
+        countryCode: "US",
+        enabled: true,
+        status: "fresh",
+        due: false,
+        cadenceMinutes: 360,
+        nextRunAt: "2030-01-01T17:00:00.000Z",
+        lastStartedAt: "2030-01-01T11:00:00.000Z",
+        lastSuccessAt: "2030-01-01T11:00:00.000Z",
+        lastFailureAt: null,
+      }],
+    }).success).toBe(true);
   });
 });
