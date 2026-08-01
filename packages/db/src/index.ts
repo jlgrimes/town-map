@@ -120,6 +120,7 @@ type EventCursor = {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const METERS_PER_MILE = 1609.344;
+const EARTH_RADIUS_METERS = 6_371_008.8;
 
 export class InvalidEventCursorError extends Error {
   constructor() {
@@ -166,6 +167,27 @@ function cursorScope(query: EventQuery) {
     longitude: query.longitude ?? null,
     radiusMiles: query.latitude === undefined ? null : query.radiusMiles,
   });
+}
+
+function normalizeLongitude(longitude: number) {
+  return ((longitude + 180) % 360 + 360) % 360 - 180;
+}
+
+function searchBounds(latitude: number, longitude: number, radiusMeters: number) {
+  const angularDistance = radiusMeters / EARTH_RADIUS_METERS;
+  const latitudeRadians = (latitude * Math.PI) / 180;
+  const latitudeDelta = (angularDistance * 180) / Math.PI;
+  const longitudeRatio = Math.sin(angularDistance) / Math.max(Math.cos(latitudeRadians), Number.EPSILON);
+  const longitudeDelta = longitudeRatio >= 1 ? 180 : (Math.asin(longitudeRatio) * 180) / Math.PI;
+  return {
+    minLatitude: Math.max(-90, latitude - latitudeDelta),
+    maxLatitude: Math.min(90, latitude + latitudeDelta),
+    minLongitude: normalizeLongitude(longitude - longitudeDelta),
+    maxLongitude: normalizeLongitude(longitude + longitudeDelta),
+    crossesAntimeridian: longitudeDelta < 180
+      && normalizeLongitude(longitude - longitudeDelta) > normalizeLongitude(longitude + longitudeDelta),
+    coversAllLongitudes: longitudeDelta >= 180,
+  };
 }
 
 const eventSelect = `
@@ -241,22 +263,37 @@ export async function listEvents(query: EventQuery, database: Pick<Pool, "query"
     const longitude = addValue(query.longitude);
     const latitude = addValue(query.latitude);
     const radiusMeters = addValue(query.radiusMiles * METERS_PER_MILE);
-    conditions.push("v.location IS NOT NULL");
-    conditions.push(`ST_DWithin(v.location, ST_Point(${longitude}, ${latitude}, 4326)::geography, ${radiusMeters})`);
+    const bounds = searchBounds(query.latitude!, query.longitude!, query.radiusMiles * METERS_PER_MILE);
+    conditions.push("v.latitude IS NOT NULL", "v.longitude IS NOT NULL");
+    conditions.push(`v.latitude BETWEEN ${addValue(bounds.minLatitude)} AND ${addValue(bounds.maxLatitude)}`);
+    if (!bounds.coversAllLongitudes) {
+      const minimumLongitude = addValue(bounds.minLongitude);
+      const maximumLongitude = addValue(bounds.maxLongitude);
+      conditions.push(bounds.crossesAntimeridian
+        ? `(v.longitude >= ${minimumLongitude} OR v.longitude <= ${maximumLongitude})`
+        : `v.longitude BETWEEN ${minimumLongitude} AND ${maximumLongitude}`);
+    }
 
-    const cursorCondition = cursor
-      ? `WHERE ("distanceMeters", "startsAt", id) > (${addValue(cursor.distanceMeters)}::double precision, ${addValue(cursor.startsAt)}::timestamptz, ${addValue(cursor.id)}::uuid)`
-      : "";
+    const distance = `2 * ${EARTH_RADIUS_METERS} * asin(sqrt(LEAST(1.0, GREATEST(0.0,
+      power(sin(radians(v.latitude - ${latitude}) / 2), 2)
+      + cos(radians(${latitude})) * cos(radians(v.latitude))
+      * power(sin(radians(v.longitude - ${longitude}) / 2), 2)
+    ))))`;
+
+    const pageConditions = [`"distanceMeters" <= ${radiusMeters}`];
+    if (cursor) {
+      pageConditions.push(`("distanceMeters", "startsAt", id) > (${addValue(cursor.distanceMeters)}::double precision, ${addValue(cursor.startsAt)}::timestamptz, ${addValue(cursor.id)}::uuid)`);
+    }
     const limit = addValue(query.limit + 1);
     sql = `WITH candidates AS (
       SELECT ${eventSelect},
-        ST_Distance(v.location, ST_Point(${longitude}, ${latitude}, 4326)::geography) AS "distanceMeters"
+        ${distance} AS "distanceMeters"
       FROM events e
       JOIN venues v ON v.id = e.venue_id
       WHERE ${conditions.join(" AND ")}
     )
     SELECT * FROM candidates
-    ${cursorCondition}
+    WHERE ${pageConditions.join(" AND ")}
     ORDER BY "distanceMeters" ASC, "startsAt" ASC, id ASC
     LIMIT ${limit}`;
   } else {

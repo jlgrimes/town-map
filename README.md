@@ -91,7 +91,7 @@ pnpm test
 pnpm build
 ```
 
-The database package also has an opt-in global-scale PostGIS integration test. It creates and removes an isolated schema, seeds 100,000 venues and events, verifies radius correctness, and confirms the GiST index is used:
+The database package also has an opt-in global-scale spatial integration test. It creates and removes an isolated schema, seeds 100,000 venues and events, verifies radius correctness, and confirms a coordinate index is used:
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/town_map_test \

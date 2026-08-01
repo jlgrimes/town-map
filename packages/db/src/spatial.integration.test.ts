@@ -7,17 +7,17 @@ import { listEvents } from "./index.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const integration = connectionString ? describe : describe.skip;
-const schema = `town_map_postgis_test_${process.pid}`;
+const schema = `town_map_spatial_test_${process.pid}`;
 const migrationsDirectory = fileURLToPath(new URL("../migrations", import.meta.url));
 let client: Client;
 
-integration("PostGIS event lookup", () => {
+integration("global-scale event lookup", () => {
   beforeAll(async () => {
     client = new Client({ connectionString });
     await client.connect();
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema}, public`);
-    for (const migration of ["001_initial.sql", "002_add_source_url.sql", "003_add_postgis_location.sql"]) {
+    for (const migration of ["001_initial.sql", "002_add_source_url.sql", "003_add_spatial_query_indexes.sql"]) {
       await client.query(await readFile(`${migrationsDirectory}/${migration}`, "utf8"));
     }
 
@@ -68,7 +68,7 @@ integration("PostGIS event lookup", () => {
     await client.end();
   });
 
-  it("returns only nearby located events and uses the GiST index at global scale", async () => {
+  it("returns only nearby located events and uses coordinate and venue indexes at global scale", async () => {
     let capturedSql = "";
     let capturedValues: unknown[] = [];
     const database = {
@@ -95,6 +95,7 @@ integration("PostGIS event lookup", () => {
       capturedValues,
     );
     const plan = JSON.stringify(explanation.rows[0]["QUERY PLAN"]);
-    expect(plan).toContain("venues_location_gist_idx");
+    expect(plan).toContain("venues_coordinates_idx");
+    expect(plan).toContain("events_venue_id_idx");
   }, 10_000);
 });

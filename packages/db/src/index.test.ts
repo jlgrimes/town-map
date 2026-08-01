@@ -64,10 +64,12 @@ describe("listEvents", () => {
     expect(page.events.map((event) => event.distanceMiles)).toEqual([1, 2]);
     expect(page.nextCursor).toBeTypeOf("string");
     const [sql, values] = query.mock.calls[0] as [string, unknown[]];
-    expect(sql).toContain("ST_DWithin(v.location");
-    expect(sql).toContain("v.location IS NOT NULL");
+    expect(sql).toContain("v.latitude BETWEEN");
+    expect(sql).toContain("v.longitude BETWEEN");
+    expect(sql).toContain("asin(sqrt");
+    expect(sql).toContain('WHERE "distanceMeters" <=');
     expect(sql).toContain('ORDER BY "distanceMeters" ASC, "startsAt" ASC, id ASC');
-    expect(sql.indexOf("ST_DWithin")).toBeLessThan(sql.indexOf("LIMIT"));
+    expect(sql.indexOf('"distanceMeters" <=')).toBeLessThan(sql.indexOf("LIMIT"));
     expect(values).toContain(25 * 1609.344);
     expect(values.at(-1)).toBe(3);
   });
@@ -82,7 +84,7 @@ describe("listEvents", () => {
     expect(secondPage.events.map((event) => event.id)).toEqual([ids[2]]);
     expect(secondPage.nextCursor).toBeNull();
     const [sql, values] = secondDatabase.query.mock.calls[0] as [string, unknown[]];
-    expect(sql).toContain('WHERE ("distanceMeters", "startsAt", id) >');
+    expect(sql).toContain('("distanceMeters", "startsAt", id) >');
     expect(values).toContain(200);
     expect(values).toContain(ids[1]);
   });
