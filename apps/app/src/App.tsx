@@ -11,7 +11,14 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -348,6 +355,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [locationLabel, setLocationLabel] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [locationAddress, setLocationAddress] = useState<string | null>(null);
   const [home, setHome] = useState<HomeLocation | null>(null);
+  const [homeEditorOpen, setHomeEditorOpen] = useState(false);
+  const [homeDraft, setHomeDraft] = useState("");
+  const [homeNotice, setHomeNotice] = useState<string | null>(null);
   const [preferenceStatus, setPreferenceStatus] = useState<"idle" | "loading" | "ready" | "saving" | "error">("idle");
   const [placeQuery, setPlaceQuery] = useState("");
   const [radiusMiles, setRadiusMiles] = useState(initialNumber("radius", 25));
@@ -370,6 +380,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     fetchUserPreferences(auth.getToken, controller.signal)
       .then((preferences) => {
         setHome(preferences.home);
+        setHomeDraft(preferences.home?.address ?? "");
         setPreferenceStatus("ready");
         if (preferences.home && !initialHasLocationOverride) {
           setLocation({ latitude: preferences.home.latitude, longitude: preferences.home.longitude });
@@ -500,22 +511,30 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     && Math.abs(location.latitude - home.latitude) < 0.00001
     && Math.abs(location.longitude - home.longitude) < 0.00001;
 
-  async function setCurrentLocationAsHome() {
-    if (!locationAddress || !auth.signedIn) return;
+  async function saveHomeAddress(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = homeDraft.trim();
+    if (!normalized || !auth.signedIn) return;
     setPreferenceStatus("saving");
-    setLocationNotice(null);
+    setHomeNotice(null);
     try {
-      const preferences = await saveUserPreferences({
-        address: locationAddress,
-        label: locationLabel,
-        latitude: location.latitude,
-        longitude: location.longitude,
-      }, auth.getToken);
+      const result = await geocodePlace(normalized);
+      if (!result) {
+        setPreferenceStatus("error");
+        setHomeNotice("We couldn't find that address. Try adding the city and state.");
+        return;
+      }
+      const preferences = await saveUserPreferences(result, auth.getToken);
       setHome(preferences.home);
+      setHomeDraft(preferences.home?.address ?? normalized);
+      setLocation({ latitude: result.latitude, longitude: result.longitude });
+      setLocationLabel(result.label);
+      setLocationAddress(result.address);
       setPreferenceStatus("ready");
+      setHomeEditorOpen(false);
     } catch {
       setPreferenceStatus("error");
-      setLocationNotice("We could not save your home right now.");
+      setHomeNotice("We couldn't save your home right now. Please try again.");
     }
   }
 
@@ -563,9 +582,48 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             <span>Town Map</span>
           </a>
           {auth.enabled && auth.loaded && (
-            <div className="ml-auto flex items-center">
+            <div className="ml-auto flex items-center gap-1">
               {auth.signedIn ? (
-                <UserButton />
+                <>
+                  <Popover open={homeEditorOpen} onOpenChange={(open) => {
+                    setHomeEditorOpen(open);
+                    setHomeNotice(null);
+                    if (open) setHomeDraft(home?.address ?? "");
+                  }}>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" className="min-h-10 px-3">
+                        <House /> Home
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-4">
+                      <PopoverHeader>
+                        <PopoverTitle>Home address</PopoverTitle>
+                        <PopoverDescription>Events will default to this location when you sign in.</PopoverDescription>
+                      </PopoverHeader>
+                      <form onSubmit={saveHomeAddress} className="space-y-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="home-address">Address, city, or ZIP code</Label>
+                          <Input
+                            id="home-address"
+                            value={homeDraft}
+                            onChange={(event) => setHomeDraft(event.target.value)}
+                            placeholder="123 Main St, Chicago, IL"
+                            autoComplete="street-address"
+                            className="h-10"
+                          />
+                        </div>
+                        {homeNotice && <p role="status" className="text-xs text-destructive">{homeNotice}</p>}
+                        <div className="flex items-center justify-between gap-3">
+                          {home ? <p className="min-w-0 truncate text-xs text-muted-foreground">Saved: {home.label}</p> : <span />}
+                          <Button type="submit" disabled={!homeDraft.trim() || preferenceStatus === "saving"}>
+                            {preferenceStatus === "saving" ? "Saving…" : home ? "Update home" : "Save home"}
+                          </Button>
+                        </div>
+                      </form>
+                    </PopoverContent>
+                  </Popover>
+                  <UserButton />
+                </>
               ) : (
                 <SignInButton mode="modal">
                   <Button variant="ghost" className="min-h-10 px-3">Sign in</Button>
@@ -648,11 +706,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             <span>{locationLabel} · {radiusMiles} mi</span>
             {auth.signedIn && home && !isHomeLocation && (
               <Button type="button" variant="ghost" size="xs" onClick={useHomeLocation}><House /> Go home</Button>
-            )}
-            {auth.signedIn && locationAddress && !isHomeLocation && (
-              <Button type="button" variant="ghost" size="xs" onClick={setCurrentLocationAsHome} disabled={preferenceStatus === "saving"}>
-                <House /> {preferenceStatus === "saving" ? "Saving…" : "Set as home"}
-              </Button>
             )}
             {auth.signedIn && isHomeLocation && <span className="inline-flex items-center gap-1"><House className="size-3.5" /> Home</span>}
             {locationNotice && <span role="status" className="inline-flex items-center gap-1 text-destructive"><CircleAlert className="size-3.5 shrink-0" />{locationNotice}</span>}
