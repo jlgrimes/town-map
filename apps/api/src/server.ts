@@ -1,5 +1,5 @@
 import cors from "@fastify/cors";
-import { clerkPlugin, getAuth } from "@clerk/fastify";
+import { clerkClient, clerkPlugin, getAuth } from "@clerk/fastify";
 import { EventQuerySchema, GAME_LABELS, GameSchema, UserPreferencesUpdateSchema } from "@town-map/contracts";
 import {
   closePool,
@@ -158,9 +158,15 @@ app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
   if (!userId) return;
   const parsed = UserPreferencesUpdateSchema.safeParse(request.body);
   if (!parsed.success) {
-    return reply.code(400).send({ error: "Invalid home address", details: parsed.error.flatten() });
+    return reply.code(400).send({ error: "Invalid preferences", details: parsed.error.flatten() });
   }
-  return saveUserPreferences(userId, parsed.data.homeAddress);
+  await clerkClient.users.updateUserMetadata(userId, {
+    publicMetadata: {
+      selectedGames: parsed.data.selectedGames,
+      onboardingCompleted: true,
+    },
+  });
+  return saveUserPreferences(userId, parsed.data.homeAddress, parsed.data.selectedGames);
 });
 
 app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {

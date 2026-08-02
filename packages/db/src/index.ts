@@ -7,6 +7,7 @@ import type {
   EventPage,
   EventQuery,
   EventSource,
+  Game,
   NormalizedEvent,
   UserPreferences,
 } from "@town-map/contracts";
@@ -282,11 +283,15 @@ export async function listCoverage(database: Queryable = getPool()): Promise<Cov
 
 type UserPreferencesRow = {
   homeAddress: string;
+  selectedGames: Game[];
+  onboardingCompletedAt: Date | null;
 };
 
 function toUserPreferences(row: UserPreferencesRow | undefined): UserPreferences {
   return {
     homeAddress: row?.homeAddress ?? null,
+    selectedGames: row?.selectedGames ?? [],
+    onboardingCompleted: Boolean(row?.onboardingCompletedAt),
   };
 }
 
@@ -295,7 +300,9 @@ export async function getUserPreferences(
   database: Queryable = getPool(),
 ): Promise<UserPreferences> {
   const result = await database.query<UserPreferencesRow>(
-    `SELECT home_address AS "homeAddress"
+    `SELECT home_address AS "homeAddress",
+            selected_games AS "selectedGames",
+            onboarding_completed_at AS "onboardingCompletedAt"
      FROM user_preferences
      WHERE clerk_user_id = $1`,
     [clerkUserId],
@@ -306,19 +313,24 @@ export async function getUserPreferences(
 export async function saveUserPreferences(
   clerkUserId: string,
   homeAddress: string,
+  selectedGames: Game[],
   database: Queryable = getPool(),
 ): Promise<UserPreferences> {
   const result = await database.query<UserPreferencesRow>(
-    `INSERT INTO user_preferences (clerk_user_id, home_address)
-     VALUES ($1, $2)
+    `INSERT INTO user_preferences (clerk_user_id, home_address, selected_games, onboarding_completed_at)
+     VALUES ($1, $2, $3, now())
      ON CONFLICT (clerk_user_id) DO UPDATE SET
        home_address = EXCLUDED.home_address,
+       selected_games = EXCLUDED.selected_games,
+       onboarding_completed_at = COALESCE(user_preferences.onboarding_completed_at, now()),
        home_label = NULL,
        home_latitude = NULL,
        home_longitude = NULL,
        updated_at = now()
-     RETURNING home_address AS "homeAddress"`,
-    [clerkUserId, homeAddress],
+     RETURNING home_address AS "homeAddress",
+               selected_games AS "selectedGames",
+               onboarding_completed_at AS "onboardingCompletedAt"`,
+    [clerkUserId, homeAddress, selectedGames],
   );
   return toUserPreferences(result.rows[0]);
 }

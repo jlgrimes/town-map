@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CoverageResponseSchema, EventPageSchema, EventQuerySchema, GameSchema, SourceSchema, UserPreferencesSchema } from "./index.js";
+import { CoverageResponseSchema, EventPageSchema, EventQuerySchema, GameSchema, SourceSchema, UserPreferencesSchema, UserPreferencesUpdateSchema } from "./index.js";
 
 describe("event API contracts", () => {
   it("requires latitude and longitude together", () => {
@@ -53,7 +53,23 @@ describe("event API contracts", () => {
   });
 
   it("validates persisted home addresses", () => {
-    expect(UserPreferencesSchema.safeParse({ homeAddress: "111 N State St, Chicago, IL 60602" }).success).toBe(true);
-    expect(UserPreferencesSchema.safeParse({ homeAddress: "" }).success).toBe(false);
+    expect(UserPreferencesSchema.safeParse({
+      homeAddress: "111 N State St, Chicago, IL 60602",
+      selectedGames: ["magic", "pokemon"],
+      onboardingCompleted: true,
+    }).success).toBe(true);
+    expect(UserPreferencesSchema.safeParse({
+      homeAddress: "",
+      selectedGames: [],
+      onboardingCompleted: false,
+    }).success).toBe(false);
+    expect(UserPreferencesUpdateSchema.safeParse({
+      homeAddress: "Chicago, IL",
+      selectedGames: ["magic"],
+    }).success).toBe(true);
+    expect(UserPreferencesUpdateSchema.safeParse({
+      homeAddress: "Chicago, IL",
+      selectedGames: [],
+    }).success).toBe(false);
   });
 });

@@ -30,7 +30,7 @@ The app runs at `http://localhost:5173`; the API runs at `http://localhost:3001`
 
 The read API exposes `GET /v1/events`, `GET /v1/games`, `GET /v1/coverage`, and `GET /v1/geocode`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details.
 
-Signed-in users can persist a home address as plain text through `GET /v1/preferences` and `PUT /v1/preferences`. The routes require a Clerk session token; the browser sends it as a bearer token. A saved home becomes the default search location unless the incoming URL already contains explicit coordinates. Resolving that string to map coordinates happens separately and never blocks saving the preference.
+Signed-in users complete onboarding with a home area and at least one game through `GET /v1/preferences` and `PUT /v1/preferences`. The routes require a Clerk session token; the browser sends it as a bearer token. PostgreSQL is the source of truth for these preferences and onboarding state, while selected games and the completion flag are also mirrored to Clerk public metadata. The saved area and games become the user's default event query. Resolving the saved area to map coordinates happens separately and never blocks saving the preference.
 
 Place searches run through the API's configurable `GEOCODER_URL`. The default OpenStreetMap Nominatim integration identifies Town Map, serializes requests below one per second, and caches repeated results for 24 hours in each API instance. Review the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) before changing this integration or scaling traffic.
 
@@ -90,7 +90,7 @@ Create one PostgreSQL database and six services from the same repository. Keep t
 
 Expose only the API service publicly. Give the API and all collectors the same `DATABASE_URL` reference variable. Configure `CORS_ORIGINS` on the API with the production and preview Vercel origins.
 
-Set `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` on the API service. Set the matching `VITE_CLERK_PUBLISHABLE_KEY` on Vercel. Enable Google in Clerk's SSO connections. Clerk development instances can use shared Google credentials; production requires a production Clerk instance plus custom Google OAuth credentials and an authorized redirect URI. Home addresses are private account data stored in PostgreSQL and are never returned by public endpoints.
+Set `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` on the API service. Set the matching `VITE_CLERK_PUBLISHABLE_KEY` on Vercel. Enable Google in Clerk's SSO connections. Clerk development instances can use shared Google credentials; production requires a production Clerk instance plus custom Google OAuth credentials and an authorized redirect URI. Home areas remain private account data in PostgreSQL and are never copied into Clerk metadata or returned by public endpoints.
 
 The five collector services wake on staggered hourly schedules, but each configured region has its own six-hour default cadence in PostgreSQL. A worker atomically leases only due regions, records per-region freshness and failures, and safely retries expired leases. This makes scheduler checks cheap while keeping upstream request volume conservative. Run each collector manually once in Railway before relying on its cron, and monitor `collection_regions` and `sync_runs`.
 

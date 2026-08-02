@@ -185,19 +185,30 @@ describe("listCoverage", () => {
 describe("user preferences", () => {
   it("returns an empty preference object for a new Clerk user", async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
-    await expect(getUserPreferences("user_new", { query } as never)).resolves.toEqual({ homeAddress: null });
+    await expect(getUserPreferences("user_new", { query } as never)).resolves.toEqual({
+      homeAddress: null,
+      selectedGames: [],
+      onboardingCompleted: false,
+    });
     expect(query).toHaveBeenCalledWith(expect.stringContaining("WHERE clerk_user_id = $1"), ["user_new"]);
   });
 
-  it("upserts and returns a home address", async () => {
+  it("upserts and returns completed onboarding preferences", async () => {
     const homeAddress = "111 N State St, Chicago, IL 60602";
+    const selectedGames = ["magic", "pokemon"] as const;
     const query = vi.fn().mockResolvedValue({ rows: [{
       homeAddress,
+      selectedGames: [...selectedGames],
+      onboardingCompletedAt: new Date("2026-08-02T12:00:00.000Z"),
     }] });
 
-    await expect(saveUserPreferences("user_123", homeAddress, { query } as never)).resolves.toEqual({ homeAddress });
+    await expect(saveUserPreferences("user_123", homeAddress, [...selectedGames], { query } as never)).resolves.toEqual({
+      homeAddress,
+      selectedGames: [...selectedGames],
+      onboardingCompleted: true,
+    });
     expect(query).toHaveBeenCalledWith(expect.stringContaining("ON CONFLICT (clerk_user_id)"), [
-      "user_123", homeAddress,
+      "user_123", homeAddress, [...selectedGames],
     ]);
   });
 });

@@ -50,13 +50,13 @@ export async function fetchUserPreferences(
 }
 
 export async function saveUserPreferences(
-  homeAddress: string,
+  preferences: { homeAddress: string; selectedGames: Game[] },
   getToken: () => Promise<string | null>,
 ) {
   const response = await fetch(`${API_URL}/v1/preferences`, {
     method: "PUT",
     headers: await authorizationHeaders(getToken),
-    body: JSON.stringify({ homeAddress }),
+    body: JSON.stringify(preferences),
   });
   if (!response.ok) throw new Error(`Preferences API returned ${response.status}`);
   return response.json() as Promise<UserPreferences>;

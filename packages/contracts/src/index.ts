@@ -164,10 +164,13 @@ export const HomeAddressSchema = z.string().trim().min(1).max(500);
 
 export const UserPreferencesUpdateSchema = z.object({
   homeAddress: HomeAddressSchema,
+  selectedGames: z.array(GameSchema).min(1).max(GameSchema.options.length),
 });
 
 export const UserPreferencesSchema = z.object({
   homeAddress: HomeAddressSchema.nullable(),
+  selectedGames: z.array(GameSchema),
+  onboardingCompleted: z.boolean(),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 

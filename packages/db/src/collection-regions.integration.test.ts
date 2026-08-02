@@ -36,6 +36,8 @@ integration("regional collection leases", () => {
         "004_add_collection_regions.sql",
         "005_add_user_preferences.sql",
         "006_store_home_as_address.sql",
+        "007_add_onepiece_riftbound.sql",
+        "008_add_onboarding_preferences.sql",
       ]) {
         await firstClient.query(await readFile(`${migrationsDirectory}/${migration}`, "utf8"));
       }

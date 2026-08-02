@@ -19,17 +19,17 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { GAME_LABELS, type EventListItem, type Game, type HomeLocation } from "@town-map/contracts";
+import { GAME_LABELS, type EventListItem, type Game } from "@town-map/contracts";
 import {
   ChevronDown,
   CircleAlert,
-  House,
   List,
   LocateFixed,
   Map as MapIcon,
   MapPin,
   RefreshCw,
   Search,
+  Settings2,
   X,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
@@ -68,7 +68,6 @@ const META_LABELS: Record<string, string> = {
 };
 
 const initialParams = new URLSearchParams(window.location.search);
-const initialHasLocationOverride = initialParams.has("lat") && initialParams.has("lng");
 
 export type AppAuth = {
   enabled: boolean;
@@ -212,6 +211,36 @@ function GameFilters({ value, onChange }: { value: Game[]; onChange: (games: Gam
   );
 }
 
+function GamePreferencePicker({ value, onChange }: { value: Game[]; onChange: (games: Game[]) => void }) {
+  function toggleGame(game: Game) {
+    onChange(value.includes(game) ? value.filter((item) => item !== game) : [...value, game]);
+  }
+
+  return (
+    <fieldset>
+      <legend className="mb-2 text-sm font-medium">Games you play</legend>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {ALL_GAMES.map((game) => {
+          const selected = value.includes(game);
+          return (
+            <Button
+              key={game}
+              type="button"
+              variant={selected ? "secondary" : "outline"}
+              className={`h-12 justify-start px-3 ${selected ? "ring-1 ring-primary/50" : "opacity-65"}`}
+              aria-pressed={selected}
+              onClick={() => toggleGame(game)}
+            >
+              <GameIcon game={game} className="size-6 shrink-0 object-contain" decorative />
+              <span className="truncate">{GAME_LABELS[game]}</span>
+            </Button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
 function DateFilters({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {
   return (
     <fieldset className="flex min-w-max items-center gap-1" aria-label="Date">
@@ -339,9 +368,13 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   });
   const [locationLabel, setLocationLabel] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [homeAddress, setHomeAddress] = useState<string | null>(null);
-  const [homeLocation, setHomeLocation] = useState<HomeLocation | null>(null);
-  const [homeEditorOpen, setHomeEditorOpen] = useState(false);
+  const [preferencesEditorOpen, setPreferencesEditorOpen] = useState(false);
   const [homeDraft, setHomeDraft] = useState("");
+  const [accountGames, setAccountGames] = useState<Game[]>([]);
+  const [preferenceGamesDraft, setPreferenceGamesDraft] = useState<Game[]>([]);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [preferencesReady, setPreferencesReady] = useState(!auth.enabled);
+  const [preferencesReloadKey, setPreferencesReloadKey] = useState(0);
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
   const [preferenceStatus, setPreferenceStatus] = useState<"idle" | "loading" | "ready" | "saving" | "error">("idle");
   const [placeQuery, setPlaceQuery] = useState(initialParams.get("place") ?? "Chicago, IL");
@@ -359,40 +392,58 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     if (!auth.enabled || !auth.loaded) return;
     if (!auth.signedIn) {
       setHomeAddress(null);
-      setHomeLocation(null);
+      setAccountGames([]);
+      setPreferenceGamesDraft([]);
+      setOnboardingCompleted(false);
+      setPreferencesReady(true);
+      setSelectedGames(initialGames());
       setPreferenceStatus("idle");
       return;
     }
     const controller = new AbortController();
+    setPreferencesReady(false);
     setPreferenceStatus("loading");
     fetchUserPreferences(auth.getToken, controller.signal)
       .then(async (preferences) => {
         setHomeAddress(preferences.homeAddress);
-        setHomeLocation(null);
         setHomeDraft(preferences.homeAddress ?? "");
-        if (preferences.homeAddress && !initialHasLocationOverride) setPlaceQuery(preferences.homeAddress);
-        setPreferenceStatus("ready");
-        if (preferences.homeAddress && !initialHasLocationOverride) {
+        setAccountGames(preferences.selectedGames);
+        setPreferenceGamesDraft(preferences.selectedGames);
+        setOnboardingCompleted(preferences.onboardingCompleted);
+        if (preferences.selectedGames.length > 0) setSelectedGames(preferences.selectedGames);
+        if (preferences.homeAddress) setPlaceQuery(preferences.homeAddress);
+        if (preferences.homeAddress) {
           try {
             const result = await geocodePlace(preferences.homeAddress, controller.signal);
-            if (!result || controller.signal.aborted) return;
-            setHomeLocation(result);
-            setLocation({ latitude: result.latitude, longitude: result.longitude });
-            setLocationLabel(result.label);
+            if (controller.signal.aborted) return;
+            if (result) {
+              setLocation({ latitude: result.latitude, longitude: result.longitude });
+              setLocationLabel(result.label);
+            } else {
+              setLocationNotice("Your home is saved, but we couldn't locate it right now.");
+            }
           } catch (error) {
             if (error instanceof DOMException && error.name === "AbortError") return;
             setLocationNotice("Your home is saved, but we couldn't locate it right now.");
           }
         }
+        if (controller.signal.aborted) return;
+        setPreferencesReady(true);
+        setPreferenceStatus("ready");
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        setPreferencesReady(false);
         setPreferenceStatus("error");
       });
     return () => controller.abort();
-  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn]);
+  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, preferencesReloadKey]);
 
   useEffect(() => {
+    if ((auth.enabled && (!auth.loaded || (auth.signedIn && !preferencesReady))) || locationStatus === "searching") {
+      setStatus("loading");
+      return;
+    }
     if (selectedGames.length === 0) {
       setEvents([]);
       setStatus("live");
@@ -417,7 +468,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         }
       });
     return () => controller.abort();
-  }, [selectedGames, location, radiusMiles, reloadKey]);
+  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, location, radiusMiles, locationStatus, preferencesReady, reloadKey]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -507,70 +558,47 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     }
   }
 
-  const isHomeLocation = homeLocation !== null
-    && Math.abs(location.latitude - homeLocation.latitude) < 0.00001
-    && Math.abs(location.longitude - homeLocation.longitude) < 0.00001;
-
-  async function saveHomeAddress(event: FormEvent<HTMLFormElement>) {
+  async function saveAccountPreferences(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = homeDraft.trim();
-    if (!normalized || !auth.signedIn) return;
+    if (!normalized || preferenceGamesDraft.length === 0 || !auth.signedIn) return;
     setPreferenceStatus("saving");
     setHomeNotice(null);
     try {
-      const preferences = await saveUserPreferences(normalized, auth.getToken);
+      const preferences = await saveUserPreferences({
+        homeAddress: normalized,
+        selectedGames: preferenceGamesDraft,
+      }, auth.getToken);
       setHomeAddress(preferences.homeAddress);
-      setHomeLocation(null);
       setHomeDraft(preferences.homeAddress ?? normalized);
+      setAccountGames(preferences.selectedGames);
+      setPreferenceGamesDraft(preferences.selectedGames);
+      setSelectedGames(preferences.selectedGames);
+      setOnboardingCompleted(preferences.onboardingCompleted);
       setPreferenceStatus("ready");
-      setHomeEditorOpen(false);
+      setPreferencesEditorOpen(false);
     } catch {
       setPreferenceStatus("error");
-      setHomeNotice("We couldn't save your home right now. Please try again.");
+      setHomeNotice("We couldn't save your preferences right now. Please try again.");
       return;
     }
 
+    setLocationStatus("searching");
     try {
       const result = await geocodePlace(normalized);
       if (!result) {
         setLocationNotice("Home saved. We couldn't locate it yet; try a city with its state or a ZIP code.");
         return;
       }
-      setHomeLocation(result);
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
       setPlaceQuery(normalized);
       setLocationNotice(null);
     } catch {
       setLocationNotice("Home saved. We couldn't locate it right now, but it remains your default.");
+    } finally {
+      setLocationStatus("idle");
     }
-  }
-
-  async function useHomeLocation() {
-    if (!homeAddress) return;
-    let result = homeLocation;
-    if (!result) {
-      setLocationStatus("searching");
-      setLocationNotice(null);
-      try {
-        result = await geocodePlace(homeAddress);
-        if (!result) {
-          setLocationNotice("We couldn't locate your saved home. Try updating it with a city and state.");
-          return;
-        }
-        setHomeLocation(result);
-      } catch {
-        setLocationNotice("Place search is temporarily unavailable. Your home is still saved.");
-        return;
-      } finally {
-        setLocationStatus("idle");
-      }
-    }
-    setLocation({ latitude: result.latitude, longitude: result.longitude });
-    setLocationLabel(result.label);
-    setPlaceQuery(homeAddress);
-    setLocationNotice(null);
-    setLocationEditorOpen(false);
   }
 
   const handleMapSelect = useCallback((eventId: string) => {
@@ -609,6 +637,64 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         Skip to events
       </a>
 
+      {auth.enabled && auth.loaded && auth.signedIn && (!preferencesReady || !onboardingCompleted) && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-background/95 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+          <div className="mx-auto flex min-h-full max-w-lg items-center justify-center">
+            <div className="w-full rounded-xl border bg-card p-5 text-card-foreground shadow-xl sm:p-7">
+              {!preferencesReady ? (
+                <div className="py-8 text-center">
+                  <img src="/town-map.png" alt="" className="mx-auto size-12 object-contain" />
+                  <h2 id="onboarding-title" className="mt-4 text-lg font-semibold">
+                    {preferenceStatus === "error" ? "We couldn't load your preferences" : "Loading your preferences…"}
+                  </h2>
+                  {preferenceStatus === "error" && (
+                    <>
+                      <p className="mt-2 text-sm text-muted-foreground">Check your connection and try again.</p>
+                      <Button className="mt-5" onClick={() => setPreferencesReloadKey((value) => value + 1)}>Try again</Button>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <img src="/town-map.png" alt="" className="size-11 object-contain" />
+                    <div>
+                      <h2 id="onboarding-title" className="text-lg font-semibold">Find tournaments near you</h2>
+                      <p className="text-sm text-muted-foreground">Tell us where to look and which games you play.</p>
+                    </div>
+                  </div>
+                  <form onSubmit={saveAccountPreferences} className="mt-6 space-y-5">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="onboarding-home">Home area</Label>
+                      <Input
+                        id="onboarding-home"
+                        value={homeDraft}
+                        onChange={(event) => setHomeDraft(event.target.value)}
+                        placeholder="Chicago, IL or 60614"
+                        autoComplete="street-address"
+                        className="h-11"
+                        autoFocus
+                      />
+                      <p className="text-xs text-muted-foreground">A city, ZIP code, or full address works.</p>
+                    </div>
+                    <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} />
+                    {preferenceGamesDraft.length === 0 && <p className="text-xs text-muted-foreground">Choose at least one game.</p>}
+                    {homeNotice && <p role="status" className="text-sm text-destructive">{homeNotice}</p>}
+                    <Button
+                      type="submit"
+                      className="h-11 w-full"
+                      disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving"}
+                    >
+                      {preferenceStatus === "saving" ? "Saving…" : "Show nearby tournaments"}
+                    </Button>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="shrink-0 border-b">
         <div className="mx-auto flex h-14 max-w-[90rem] items-center px-4 sm:px-6 lg:px-8">
           <a href="/" className="inline-flex items-center gap-2 text-sm font-semibold" aria-label="Town Map home">
@@ -619,40 +705,45 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             <div className="ml-auto flex items-center gap-1">
               {auth.signedIn ? (
                 <>
-                  <Popover open={homeEditorOpen} onOpenChange={(open) => {
-                    setHomeEditorOpen(open);
+                  <Popover open={preferencesEditorOpen} onOpenChange={(open) => {
+                    setPreferencesEditorOpen(open);
                     setHomeNotice(null);
-                    if (open) setHomeDraft(homeAddress ?? "");
+                    if (open) {
+                      setHomeDraft(homeAddress ?? "");
+                      setPreferenceGamesDraft(accountGames);
+                    }
                   }}>
                     <PopoverTrigger asChild>
                       <Button variant="ghost" className="min-h-10 px-3">
-                        <House /> Home
+                        <Settings2 /> Preferences
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-4">
                       <PopoverHeader>
-                        <PopoverTitle>Home address</PopoverTitle>
-                        <PopoverDescription>Saved as text and looked up when it is used for event search.</PopoverDescription>
+                        <PopoverTitle>Tournament preferences</PopoverTitle>
+                        <PopoverDescription>These determine which nearby events Town Map shows you.</PopoverDescription>
                       </PopoverHeader>
-                      <form onSubmit={saveHomeAddress} className="space-y-3">
+                      <form onSubmit={saveAccountPreferences} className="space-y-4">
                         <div className="space-y-1.5">
-                          <Label htmlFor="home-address">Address, city, or ZIP code</Label>
+                          <Label htmlFor="home-address">Home area</Label>
                           <Input
                             id="home-address"
                             value={homeDraft}
                             onChange={(event) => setHomeDraft(event.target.value)}
-                            placeholder="123 Main St, Chicago, IL"
+                            placeholder="Chicago, IL or 60614"
                             autoComplete="street-address"
                             className="h-10"
                           />
                         </div>
+                        <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} />
                         {homeNotice && <p role="status" className="text-xs text-destructive">{homeNotice}</p>}
-                        <div className="flex items-center justify-between gap-3">
-                          {homeAddress ? <p className="min-w-0 truncate text-xs text-muted-foreground">Saved: {homeAddress}</p> : <span />}
-                          <Button type="submit" disabled={!homeDraft.trim() || preferenceStatus === "saving"}>
-                            {preferenceStatus === "saving" ? "Saving…" : homeAddress ? "Update home" : "Save home"}
-                          </Button>
-                        </div>
+                        <Button
+                          type="submit"
+                          className="w-full"
+                          disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving"}
+                        >
+                          {preferenceStatus === "saving" ? "Saving…" : "Save preferences"}
+                        </Button>
                       </form>
                     </PopoverContent>
                   </Popover>
@@ -672,7 +763,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         <h1 className="sr-only">Town Map events</h1>
 
         <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className={`grid gap-2 ${auth.signedIn ? "" : "sm:grid-cols-[minmax(0,1fr)_auto]"}`}>
             <div className="relative">
               <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -686,55 +777,52 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
             </div>
 
-            <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="h-11 w-full justify-between gap-2 px-3 font-normal sm:w-auto sm:max-w-72">
-                  <span className="flex min-w-0 items-center gap-2">
-                    {isHomeLocation ? <House className="shrink-0" /> : <MapPin className="shrink-0" />}
-                    <span className="truncate">{locationLabel}</span>
-                  </span>
-                  <ChevronDown className="shrink-0" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
-                <PopoverHeader>
-                  <PopoverTitle>Search location</PopoverTitle>
-                  <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
-                </PopoverHeader>
-                <form onSubmit={searchPlace} className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="place-search">City, state, or ZIP code</Label>
-                    <Input
-                      id="place-search"
-                      value={placeQuery}
-                      onChange={(event) => setPlaceQuery(event.target.value)}
-                      placeholder="Chicago, IL"
-                      autoComplete="postal-code"
-                      className="h-11"
-                      autoFocus
-                    />
-                  </div>
-                  {locationNotice && (
-                    <p role="status" className="flex items-start gap-1 text-xs text-destructive">
-                      <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
-                    </p>
-                  )}
-                  <div className="flex gap-2">
-                    <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
-                      {locationStatus === "searching" ? "Searching…" : "Search"}
-                    </Button>
-                    <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
-                      <LocateFixed />
-                    </Button>
-                  </div>
-                  {homeAddress && !isHomeLocation && (
-                    <Button type="button" variant="ghost" className="min-h-11 w-full justify-start px-3" onClick={useHomeLocation}>
-                      <House /> Use saved home
-                    </Button>
-                  )}
-                </form>
-              </PopoverContent>
-            </Popover>
+            {!auth.signedIn && (
+              <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="h-11 w-full justify-between gap-2 px-3 font-normal sm:w-auto sm:max-w-72">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <MapPin className="shrink-0" />
+                      <span className="truncate">{locationLabel}</span>
+                    </span>
+                    <ChevronDown className="shrink-0" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
+                  <PopoverHeader>
+                    <PopoverTitle>Search location</PopoverTitle>
+                    <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
+                  </PopoverHeader>
+                  <form onSubmit={searchPlace} className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="place-search">City, state, or ZIP code</Label>
+                      <Input
+                        id="place-search"
+                        value={placeQuery}
+                        onChange={(event) => setPlaceQuery(event.target.value)}
+                        placeholder="Chicago, IL"
+                        autoComplete="postal-code"
+                        className="h-11"
+                        autoFocus
+                      />
+                    </div>
+                    {locationNotice && (
+                      <p role="status" className="flex items-start gap-1 text-xs text-destructive">
+                        <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+                        {locationStatus === "searching" ? "Searching…" : "Search"}
+                      </Button>
+                      <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
+                        <LocateFixed />
+                      </Button>
+                    </div>
+                  </form>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
 
           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -742,7 +830,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               <DateFilters value={dateFilter} onChange={setDateFilter} />
             </div>
             <div className="flex items-center justify-between gap-2 sm:justify-end">
-              <GameFilters value={selectedGames} onChange={setSelectedGames} />
+              {!auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} />}
               <div>
                 <Label htmlFor="radius" className="sr-only">Search radius</Label>
                 <select
