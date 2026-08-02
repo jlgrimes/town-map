@@ -1,4 +1,4 @@
-import type { EventPage, Game, HomeLocation, UserPreferences } from "@town-map/contracts";
+import { UserPreferencesSchema, type EventPage, type Game, type HomeLocation, type UserPreferences } from "@town-map/contracts";
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 
@@ -37,6 +37,23 @@ async function authorizationHeaders(getToken: () => Promise<string | null>) {
   };
 }
 
+export function normalizeUserPreferences(value: unknown): UserPreferences {
+  const current = UserPreferencesSchema.safeParse(value);
+  if (current.success) return current.data;
+
+  if (typeof value !== "object" || value === null || !("homeAddress" in value)) {
+    throw new Error("Preferences API returned invalid data");
+  }
+
+  const legacy = UserPreferencesSchema.safeParse({
+    homeAddress: value.homeAddress,
+    selectedGames: [],
+    onboardingCompleted: false,
+  });
+  if (!legacy.success) throw new Error("Preferences API returned invalid data");
+  return legacy.data;
+}
+
 export async function fetchUserPreferences(
   getToken: () => Promise<string | null>,
   signal?: AbortSignal,
@@ -46,7 +63,7 @@ export async function fetchUserPreferences(
     signal,
   });
   if (!response.ok) throw new Error(`Preferences API returned ${response.status}`);
-  return response.json() as Promise<UserPreferences>;
+  return normalizeUserPreferences(await response.json());
 }
 
 export async function saveUserPreferences(
@@ -59,5 +76,5 @@ export async function saveUserPreferences(
     body: JSON.stringify(preferences),
   });
   if (!response.ok) throw new Error(`Preferences API returned ${response.status}`);
-  return response.json() as Promise<UserPreferences>;
+  return UserPreferencesSchema.parse(await response.json());
 }
