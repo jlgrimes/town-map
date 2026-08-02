@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const GameSchema = z.enum(["pokemon", "magic", "yugioh"]);
+export const GameSchema = z.enum(["pokemon", "magic", "yugioh", "onepiece", "riftbound"]);
 export type Game = z.infer<typeof GameSchema>;
 
 export const SourceSchema = z.enum([
@@ -8,6 +8,8 @@ export const SourceSchema = z.enum([
   "wotc-locator",
   "konami-kcgn",
   "konami-events",
+  "bandai-tcg-plus",
+  "riftbound-locator",
 ]);
 export type EventSource = z.infer<typeof SourceSchema>;
 
@@ -173,4 +175,6 @@ export const GAME_LABELS: Record<Game, string> = {
   pokemon: "Pokémon",
   magic: "Magic",
   yugioh: "Yu-Gi-Oh!",
+  onepiece: "One Piece",
+  riftbound: "Riftbound",
 };

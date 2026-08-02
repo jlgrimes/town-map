@@ -4,6 +4,8 @@ const GAME_ICONS: Record<Game, string> = {
   pokemon: "/pokeball.png",
   magic: "/planeswalk.png",
   yugioh: "/blue-eyes.png",
+  onepiece: "/onepiece.svg",
+  riftbound: "/riftbound.svg",
 };
 
 export function GameIcon({

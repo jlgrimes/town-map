@@ -30,6 +30,26 @@ These endpoints are public interfaces used by official event locators, but they 
 - Provenance caveat: Pokedata is a third-party index, and its own page warns that event edits may not be reflected; link users to the official Pokémon event page and keep collection conservative
 - Failure policy: reject HTML/PHP errors, unexpected CSV contracts, or empty results for the affected country region and retain previously stored records
 
+## One Piece: Bandai TCG+
+
+- Endpoint: `https://api.bandai-tcg-plus.com/api/user/event/list`
+- Game title key: `4` (English-language One Piece Card Game)
+- Stable source keys: event `id`; organizer `organizer_id`
+- Current strategy: query configured country/subdivision regions over a rolling 90-day window and paginate in blocks of 100
+- Time handling: Bandai supplies local wall time plus an IANA timezone; the collector converts that timestamp to UTC
+- Notable transforms: `event_place_geo.x` is latitude and `.y` is longitude; currency names and symbols are normalized to ISO codes when unambiguous
+- Failure policy: fail the region when a page is malformed or exceeds its configured page ceiling; retain previously stored records
+- Permission caveat: the public web application is not a documented partner API. Obtain written Bandai authorization before activating automated production collection.
+
+## Riftbound: official event locator
+
+- Endpoint: `https://api.riftbound.uvsgames.com/api/v2/events/`
+- Stable source keys: event `id`; store `id`
+- Current strategy: query configured coordinate/radius centers for upcoming Riftbound events over a rolling 180-day window and paginate in blocks of 250
+- Notable transforms: `cost_in_cents` becomes a decimal price; the provided UTC offsets and IANA timezone are both retained correctly
+- Failure policy: fail the search-center region when results are malformed or exceed its configured page ceiling; retain previously stored records
+- Permission caveat: the locator API is public but not documented as a partner feed. Obtain written UVS/Riot authorization before activating automated production collection.
+
 ## Normalization rules
 
 - All timestamps are stored as UTC `timestamptz`; the source timezone is retained separately when available.

@@ -1,0 +1,10 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "pnpm --filter @town-map/ingest-onepiece... build"
+watchPatterns = ["/services/ingest-onepiece/**", "/packages/**", "/pnpm-lock.yaml"]
+
+[deploy]
+startCommand = "pnpm --filter @town-map/ingest-onepiece start"
+cronSchedule = "37 * * * *"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 2

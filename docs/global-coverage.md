@@ -9,6 +9,8 @@
 | Magic | Wizards Store and Event Locator | Coordinate-and-radius search regions | Worldwide coverage needs a bounded, overlapping search-center catalog and an agreed request budget |
 | Yu-Gi-Oh! | KONAMI Card Game Network | State search through the US endpoint | Other countries require verified country-specific endpoints or an official feed |
 | Pokémon | Pokedata event export | Worldwide or country-filtered competitive TCG export | Third-party data is not authoritative and excludes unsupported event categories |
+| One Piece | Bandai TCG+ | Country and subdivision regions | Production automation needs written Bandai authorization; high event volume requires bounded regional paging |
+| Riftbound | Official Riftbound locator | Coordinate-and-radius search regions | Production automation needs written UVS/Riot authorization; worldwide coverage requires a bounded center catalog |
 
 The existing production defaults stay intentionally small. Catalog growth and activation are separate operations: regions may be registered as disabled so coverage can be reviewed before any upstream request is made.
 
@@ -51,10 +53,11 @@ Suggested initial thresholds are at least 99% successful regional runs, no regio
 
 ## Recommended sequence
 
-1. Observe the existing Chicago Magic, Illinois Yu-Gi-Oh!, and Pokémon regions through `/v1/coverage`.
+1. Observe the existing Chicago Magic/Riftbound, Illinois Yu-Gi-Oh!/One Piece, and Pokémon regions through `/v1/coverage`.
 2. Build a disabled Magic metropolitan catalog, deduplicating overlapping results by the existing source event ID.
 3. Activate five Magic metros with the allowlist and measure event yield per request for one week.
 4. Expand Yu-Gi-Oh! across US states in small priority cohorts; investigate official non-US interfaces separately.
 5. Compare country-filtered Pokémon exports with the worldwide export before deciding whether country partitioning improves reliability.
-6. Add first-party or partner feeds where locator interfaces cannot provide defensible coverage.
-7. Publish user-facing coverage language based on measured regions and source categories, never an unqualified “all events” claim.
+6. Secure written permission before enabling the Bandai TCG+ and Riftbound collectors in production.
+7. Add first-party or partner feeds where locator interfaces cannot provide defensible coverage.
+8. Publish user-facing coverage language based on measured regions and source categories, never an unqualified “all events” claim.

@@ -1,4 +1,12 @@
-import type { EventListItem, Game } from "@town-map/contracts";
+import type { EventListItem, EventSource, Game } from "@town-map/contracts";
+
+const DEMO_SOURCES: Record<Game, EventSource> = {
+  pokemon: "pokedata-events",
+  magic: "wotc-locator",
+  yugioh: "konami-kcgn",
+  onepiece: "bandai-tcg-plus",
+  riftbound: "riftbound-locator",
+};
 
 const upcoming = (days: number, hour: number) => {
   const date = new Date();
@@ -20,7 +28,7 @@ function event(
 ): EventListItem {
   return {
     id,
-    source: game === "magic" ? "wotc-locator" : game === "yugioh" ? "konami-kcgn" : "pokedata-events",
+    source: DEMO_SOURCES[game],
     sourceEventId: id,
     game,
     title,
@@ -52,8 +60,26 @@ function event(
   };
 }
 
+const goodGamesEvent = event("demo-1", "magic", "Friday Night Magic — Commander", 0, 19, "Good Games Chicago", "Chicago", 1.8, { format: "Commander", priceAmount: 10 });
+
 export const demoEvents: EventListItem[] = [
-  event("demo-1", "magic", "Friday Night Magic — Commander", 0, 19, "Good Games Chicago", "Chicago", 1.8, { format: "Commander", priceAmount: 10 }),
+  goodGamesEvent,
+  event("demo-7", "pokemon", "Pokémon League at Good Games", 2, 18, "Good Games Chicago", "Chicago", 1.8, {
+    eventType: "League",
+    venue: goodGamesEvent.venue,
+  }),
+  event("demo-8", "yugioh", "Yu-Gi-Oh! Locals at Good Games", 4, 19, "Good Games Chicago", "Chicago", 1.8, {
+    format: "Advanced",
+    venue: goodGamesEvent.venue,
+  }),
+  event("demo-9", "onepiece", "One Piece Store Tournament", 3, 18, "Good Games Chicago", "Chicago", 1.8, {
+    format: "Standard Regulation",
+    venue: goodGamesEvent.venue,
+  }),
+  event("demo-10", "riftbound", "Riftbound Nexus Night", 5, 18, "Good Games Chicago", "Chicago", 1.8, {
+    format: "Constructed",
+    venue: goodGamesEvent.venue,
+  }),
   event("demo-2", "pokemon", "Pokémon League Challenge", 1, 11, "Dice Dojo", "Chicago", 3.4, { format: "Standard", eventType: "League Challenge" }),
   event("demo-3", "yugioh", "Saturday Advanced Local", 1, 14, "Gamers World", "Chicago", 4.9, { format: "Advanced", capacity: 24 }),
   event("demo-4", "magic", "Modern Monday", 3, 18, "Grandmaster Games", "Oak Park", 8.2, { format: "Modern", priceAmount: 15 }),
