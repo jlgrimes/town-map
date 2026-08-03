@@ -370,6 +370,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     [gameSelection, catalog],
   );
   const [events, setEvents] = useState<EventListItem[]>([]);
+  // True when the area holds more events than one query will gather, so the map
+  // is showing a subset rather than everything nearby.
+  const [resultsTruncated, setResultsTruncated] = useState(false);
   const [query, setQuery] = useState(initialParams.get("q") ?? "");
   const [dateFilter, setDateFilter] = useState<DateFilter>(initialDateFilter);
   const [viewMode, setViewMode] = useState<ViewMode>(initialParams.get("view") === "map" ? "map" : "list");
@@ -464,12 +467,14 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     const controller = new AbortController();
     setStatus("loading");
     fetchEvents({ games: selectedGames, ...location, radiusMiles, signal: controller.signal })
-      .then(({ events: nextEvents }) => {
+      .then(({ events: nextEvents, truncated }) => {
         setEvents(nextEvents);
+        setResultsTruncated(truncated);
         setStatus("live");
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        setResultsTruncated(false);
         if (import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true") {
           setEvents(demoEvents);
           setStatus("preview");
@@ -917,6 +922,12 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                         Load {Math.min(PAGE_SIZE, visibleEvents.length - visibleCount)} more
                       </Button>
                     </div>
+                  )}
+                  {resultsTruncated && visibleCount >= visibleEvents.length && (
+                    <p className="px-2 pb-1 text-xs text-muted-foreground">
+                      This area has more events than we can show at once. Narrow the distance or
+                      pick fewer games to see the rest.
+                    </p>
                   )}
                 </>
               )}

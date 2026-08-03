@@ -699,6 +699,7 @@ export async function upsertEvent(source: EventSource, event: NormalizedEvent) {
 
 type EventRow = Omit<EventListItem, "distanceMiles" | "venue"> & {
   distanceMeters: number | null;
+  cursorStartsAt: string;
   priceAmount: string | null;
   venueName: string | null;
   venueAddress: string | null;
@@ -791,6 +792,17 @@ function searchBounds(latitude: number, longitude: number, radiusMeters: number)
     coversAllLongitudes: longitudeDelta >= 180,
   };
 }
+
+/**
+ * `starts_at` rendered with microsecond precision.
+ *
+ * The keyset cursor has to reproduce the sort key exactly. The driver returns
+ * timestamptz as a JS Date, which only holds milliseconds, so a cursor built
+ * from it lands just before the real value and the boundary rows repeat on the
+ * next page.
+ */
+const CURSOR_STARTS_AT =
+  `to_char(e.starts_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorStartsAt"`;
 
 const eventColumns = `
   e.id, e.source, e.source_event_id AS "sourceEventId", e.game, e.title,
@@ -906,6 +918,7 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
     // columns for the page only.
     sql = `WITH candidates AS (
       SELECT e.id, e.venue_id, e.starts_at AS "startsAt",
+        ${CURSOR_STARTS_AT},
         ${distance} AS "distanceMeters"
       FROM events e
       WHERE ${conditions.join(" AND ")}
@@ -916,7 +929,7 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
       LIMIT ${limit}
     )
     SELECT ${eventSelect},
-      page."distanceMeters"
+      page."cursorStartsAt", page."distanceMeters"
     FROM page
     JOIN events e ON e.id = page.id
     LEFT JOIN venues v ON v.id = page.venue_id
@@ -926,7 +939,7 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
       conditions.push(`(e.starts_at, e.id) > (${addValue(cursor.startsAt)}::timestamptz, ${addValue(cursor.id)}::uuid)`);
     }
     const limit = addValue(query.limit + 1);
-    sql = `SELECT ${eventSelect}, NULL::double precision AS "distanceMeters"
+    sql = `SELECT ${eventSelect}, ${CURSOR_STARTS_AT}, NULL::double precision AS "distanceMeters"
       FROM events e
       LEFT JOIN venues v ON v.id = e.venue_id
       WHERE ${conditions.join(" AND ")}
@@ -944,7 +957,7 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
       kind: spatial ? "spatial" : "chronological",
       scope,
       snapshotFrom,
-      startsAt: new Date(lastRow.startsAt).toISOString(),
+      startsAt: lastRow.cursorStartsAt,
       id: lastRow.id,
       ...(spatial ? { distanceMeters: Number(lastRow.distanceMeters) } : {}),
     })

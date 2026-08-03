@@ -9,22 +9,62 @@ import {
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 
-export async function fetchEvents(options: {
+/** Server page size. The API caps `limit` at 250. */
+const EVENT_PAGE_SIZE = 200;
+
+/**
+ * Upper bound on pages followed for one query. The map draws every event it is
+ * given, so results are gathered rather than paged on demand; this keeps a very
+ * dense area from issuing unbounded requests.
+ */
+const MAX_EVENT_PAGES = 5;
+
+export type EventFetchOptions = {
   games: Game[];
   latitude?: number;
   longitude?: number;
   radiusMiles?: number;
   signal?: AbortSignal;
-}) {
-  const params = new URLSearchParams({ games: options.games.join(","), limit: "200" });
+};
+
+function eventQueryParams(options: EventFetchOptions, cursor: string | null) {
+  const params = new URLSearchParams({
+    games: options.games.join(","),
+    limit: String(EVENT_PAGE_SIZE),
+  });
   if (options.latitude !== undefined && options.longitude !== undefined) {
     params.set("latitude", String(options.latitude));
     params.set("longitude", String(options.longitude));
     params.set("radiusMiles", String(options.radiusMiles ?? 25));
   }
-  const response = await fetch(`${API_URL}/v1/events?${params}`, { signal: options.signal });
+  if (cursor) params.set("cursor", cursor);
+  return params;
+}
+
+async function fetchEventPage(options: EventFetchOptions, cursor: string | null) {
+  const response = await fetch(`${API_URL}/v1/events?${eventQueryParams(options, cursor)}`, {
+    signal: options.signal,
+  });
   if (!response.ok) throw new Error(`Event API returned ${response.status}`);
   return response.json() as Promise<EventPage>;
+}
+
+/**
+ * Follows the API's cursor until the results are exhausted or the page ceiling
+ * is reached. `truncated` reports the latter so the caller can say results were
+ * cut short instead of silently showing a partial map.
+ */
+export async function fetchEvents(options: EventFetchOptions) {
+  const events: EventPage["events"] = [];
+  let cursor: string | null = null;
+
+  for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
+    const result: EventPage = await fetchEventPage(options, cursor);
+    events.push(...result.events);
+    cursor = result.nextCursor;
+    if (!cursor) return { events, truncated: false };
+  }
+  return { events, truncated: true };
 }
 
 export async function fetchGameRegistry(signal?: AbortSignal) {

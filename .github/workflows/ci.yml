@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  # Every branch, not just main, so a feature branch is checked before it ever
+  # becomes a pull request.
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
 
 concurrency:

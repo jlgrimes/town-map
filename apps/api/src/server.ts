@@ -252,7 +252,12 @@ app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
 app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {
   const games = request.query.games?.split(",").filter(Boolean) ?? [];
   const categories = request.query.categories?.split(",").filter(Boolean) ?? [];
-  const parsed = EventQuerySchema.safeParse({ ...request.query, games, categories });
+  // `?latitude=` must mean "not supplied". Left in place it coerces to 0, which
+  // is a valid latitude, and the search silently runs off the coast of Africa.
+  const supplied = Object.fromEntries(
+    Object.entries(request.query).filter(([, value]) => value !== undefined && value !== ""),
+  );
+  const parsed = EventQuerySchema.safeParse({ ...supplied, games, categories });
   reply.header("Cache-Control", "no-store");
   if (!parsed.success) {
     return reply.code(400).send({ error: "Invalid query", details: parsed.error.flatten() });

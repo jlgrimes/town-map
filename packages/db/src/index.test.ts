@@ -18,6 +18,8 @@ function row(index: number, distanceMeters: number | null) {
     title: `Event ${index}`,
     description: null,
     startsAt: new Date(`2030-01-0${index + 1}T18:00:00.000Z`),
+    // Selected alongside startsAt so the cursor keeps microsecond precision.
+    cursorStartsAt: `2030-01-0${index + 1}T18:00:00.000000Z`,
     endsAt: null,
     timezone: "America/Chicago",
     status: "scheduled",
