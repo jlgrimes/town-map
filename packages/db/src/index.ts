@@ -243,6 +243,58 @@ function coverageStatus(region: CoverageRegionRow, now: Date): CoverageRegionSta
 }
 
 /**
+ * Session-scoped lock so two maintenance runs cannot delete concurrently.
+ */
+const RETENTION_LOCK_ID = 8042027;
+
+/**
+ * Deletes events that finished longer ago than the retention window.
+ *
+ * Nothing reads past events — the API only serves `starts_at >= now()` — but
+ * they accumulate forever and sit in every index on the table, including the
+ * geography indexes that answer each map query. Raw payloads and any future
+ * child rows are removed by cascade.
+ *
+ * Deleted in bounded batches so a long-neglected database does not produce one
+ * enormous transaction. Returns the number of events removed.
+ */
+export async function deleteExpiredEvents(
+  retentionDays: number,
+  options: { batchSize?: number; database?: Queryable } = {},
+) {
+  if (!Number.isInteger(retentionDays) || retentionDays < 1) {
+    throw new Error("retentionDays must be a positive integer");
+  }
+  const { batchSize = 5_000, database = getPool() } = options;
+  const lock = await database.query(
+    "SELECT pg_try_advisory_lock($1) AS acquired",
+    [RETENTION_LOCK_ID],
+  ) as { rows: Array<{ acquired: boolean }> };
+  if (!lock.rows[0].acquired) return { deleted: 0, skipped: true };
+
+  let deleted = 0;
+  try {
+    for (;;) {
+      const result = await database.query(
+        `DELETE FROM events
+         WHERE id IN (
+           SELECT id FROM events
+           WHERE starts_at < now() - make_interval(days => $1)
+           LIMIT $2
+         )`,
+        [retentionDays, batchSize],
+      ) as { rowCount: number | null };
+      const removed = result.rowCount ?? 0;
+      deleted += removed;
+      if (removed < batchSize) break;
+    }
+  } finally {
+    await database.query("SELECT pg_advisory_unlock($1)", [RETENTION_LOCK_ID]);
+  }
+  return { deleted, skipped: false };
+}
+
+/**
  * Reads the game and category taxonomy.
  *
  * Ordered by `position` then label so display order is a data decision. Disabled
@@ -408,7 +460,7 @@ export async function saveUserPreferences(
 const EVENT_MUTABLE_COLUMNS = [
   "game", "venue_id", "title", "description", "starts_at", "ends_at", "timezone",
   "status", "format", "event_type", "source_url", "registration_url", "price_amount",
-  "price_currency", "capacity", "is_online", "latitude", "longitude", "raw",
+  "price_currency", "capacity", "is_online", "latitude", "longitude",
   // Included so that seeing a withdrawn event again counts as a change and
   // therefore un-withdraws it. `collection_region_id` is deliberately absent:
   // where two regions overlap, comparing it would make every shared event look
@@ -520,14 +572,13 @@ async function upsertEventBatch(
     `INSERT INTO events (
        source, source_event_id, game, venue_id, title, description, starts_at, ends_at,
        timezone, status, format, event_type, source_url, registration_url, price_amount,
-       price_currency, capacity, is_online, latitude, longitude, raw,
+       price_currency, capacity, is_online, latitude, longitude,
        collection_region_id, withdrawn_at
      )
      SELECT $1, entry.source_event_id, entry.game, entry.venue_id, entry.title, entry.description,
        entry.starts_at, entry.ends_at, entry.timezone, entry.status, entry.format, entry.event_type,
        entry.source_url, entry.registration_url, entry.price_amount, entry.price_currency,
        entry.capacity, entry.is_online, entry.latitude, entry.longitude,
-       COALESCE(entry.raw, '{}'::jsonb),
        $3::uuid, NULL::timestamptz
      FROM jsonb_to_recordset($2::jsonb) AS entry(
        source_event_id text, game text, venue_id uuid, title text, description text,
@@ -544,6 +595,20 @@ async function upsertEventBatch(
        last_seen_at = now(), updated_at = now()
      WHERE ${changedPredicate("events", EVENT_MUTABLE_COLUMNS)}`,
     [source, JSON.stringify(payload), collectionRegionId],
+  );
+
+  // Joined back on the natural key because the upsert above deliberately does
+  // not return unchanged rows, so their ids are not available from it. Raw
+  // payloads are compared too: an event whose upstream record is byte-identical
+  // should cost no write here either.
+  await client.query(
+    `INSERT INTO event_raw (event_id, raw)
+     SELECT e.id, COALESCE(entry.raw, '{}'::jsonb)
+     FROM jsonb_to_recordset($2::jsonb) AS entry(source_event_id text, raw jsonb)
+     JOIN events e ON e.source = $1 AND e.source_event_id = entry.source_event_id
+     ON CONFLICT (event_id) DO UPDATE SET raw = EXCLUDED.raw, updated_at = now()
+     WHERE event_raw.raw IS DISTINCT FROM EXCLUDED.raw`,
+    [source, JSON.stringify(payload)],
   );
 }
 

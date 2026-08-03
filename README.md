@@ -21,6 +21,7 @@ services/ingest-yugioh      KONAMI Card Game Network collector
 services/ingest-pokemon     Pokedata Pokémon TCG collector
 services/ingest-onepiece    Bandai TCG+ One Piece collector
 services/ingest-riftbound   Riftbound locator collector
+services/maintenance        Scheduled retention of past events
 ```
 
 ## Local development
@@ -43,6 +44,10 @@ Every route is rate limited per process and sends an explicit `Cache-Control`. P
 Signed-in users complete onboarding with a home area and at least one game through `GET /v1/preferences` and `PUT /v1/preferences`. The routes require a Clerk session token; the browser sends it as a bearer token. PostgreSQL is the source of truth for these preferences and onboarding state, while selected games and the completion flag are also mirrored to Clerk public metadata. The saved area and games become the user's default event query. Resolving the saved area to map coordinates happens separately and never blocks saving the preference.
 
 Place searches run through the API's configurable `GEOCODER_URL`. The default OpenStreetMap Nominatim integration identifies Town Map, serializes requests below one per second, and caches repeated results for 24 hours in each API instance. Review the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) before changing this integration or scaling traffic.
+
+## Retention
+
+`services/maintenance` runs daily and deletes events that finished more than `EVENT_RETENTION_DAYS` ago (365 by default), cascading to their stored upstream payloads. Nothing reads past events — the API only serves `starts_at >= now()` — but they otherwise accumulate forever in the indexes that answer every map query. Deleting frees the space for reuse inside the table rather than returning it to the operating system; reclaiming that needs `VACUUM FULL` or `pg_repack`. When volume makes a daily delete too coarse, range-partitioning `events` on `starts_at` turns retention into dropping a partition.
 
 ## Collector checks
 
@@ -87,7 +92,7 @@ The root `vercel.json` supplies the monorepo build settings and SPA route fallba
 
 ### Railway
 
-Create one PostgreSQL database and six services from the same repository. Keep the repository root as `/` so the services can consume shared workspace packages. For each service, select its config file:
+Create one PostgreSQL database and seven services from the same repository. Keep the repository root as `/` so the services can consume shared workspace packages. For each service, select its config file:
 
 | Railway service | Config-as-code path |
 | --- | --- |
@@ -97,8 +102,9 @@ Create one PostgreSQL database and six services from the same repository. Keep t
 | Pokémon cron | `/services/ingest-pokemon/railway.toml` |
 | One Piece cron | `/services/ingest-onepiece/railway.toml` |
 | Riftbound cron | `/services/ingest-riftbound/railway.toml` |
+| Maintenance cron | `/services/maintenance/railway.toml` |
 
-Expose only the API service publicly. Give the API and all collectors the same `DATABASE_URL` reference variable. Configure `CORS_ORIGINS` on the API with the production and preview Vercel origins.
+Expose only the API service publicly. Give the API, all collectors and the maintenance service the same `DATABASE_URL` reference variable. Configure `CORS_ORIGINS` on the API with the production and preview Vercel origins.
 
 Set `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` on the API service. Set the matching `VITE_CLERK_PUBLISHABLE_KEY` on Vercel. Enable Google in Clerk's SSO connections. Clerk development instances can use shared Google credentials; production requires a production Clerk instance plus custom Google OAuth credentials and an authorized redirect URI. Home areas remain private account data in PostgreSQL and are never copied into Clerk metadata or returned by public endpoints.
 

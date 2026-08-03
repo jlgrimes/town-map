@@ -1,0 +1,10 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "pnpm --filter @town-map/maintenance... build"
+watchPatterns = ["/services/maintenance/**", "/packages/**", "/pnpm-lock.yaml"]
+
+[deploy]
+startCommand = "pnpm --filter @town-map/maintenance start"
+cronSchedule = "43 4 * * *"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 2

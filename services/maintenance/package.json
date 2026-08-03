@@ -1,0 +1,22 @@
+{
+  "name": "@town-map/maintenance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap",
+    "check": "tsc --noEmit",
+    "dev": "DRY_RUN=true tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@town-map/db": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "8.5.1",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}
