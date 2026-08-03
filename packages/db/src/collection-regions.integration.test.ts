@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -9,11 +7,11 @@ import {
   finishSync,
   registerCollectionRegions,
 } from "./index.js";
+import { applyMigrations } from "./migrations.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const integration = connectionString ? describe : describe.skip;
 const schema = `town_map_regions_test_${process.pid}`;
-const migrationsDirectory = fileURLToPath(new URL("../migrations", import.meta.url));
 let firstClient: Client;
 let secondClient: Client;
 
@@ -27,23 +25,7 @@ integration("regional collection leases", () => {
       firstClient.query(`SET search_path TO ${schema}, public`),
       secondClient.query(`SET search_path TO ${schema}, public`),
     ]);
-    await firstClient.query("SELECT pg_advisory_lock(8042026)");
-    try {
-      for (const migration of [
-        "001_initial.sql",
-        "002_add_source_url.sql",
-        "003_add_spatial_query_indexes.sql",
-        "004_add_collection_regions.sql",
-        "005_add_user_preferences.sql",
-        "006_store_home_as_address.sql",
-        "007_add_onepiece_riftbound.sql",
-        "008_add_onboarding_preferences.sql",
-      ]) {
-        await firstClient.query(await readFile(`${migrationsDirectory}/${migration}`, "utf8"));
-      }
-    } finally {
-      await firstClient.query("SELECT pg_advisory_unlock(8042026)");
-    }
+    await applyMigrations(firstClient);
   });
 
   afterAll(async () => {

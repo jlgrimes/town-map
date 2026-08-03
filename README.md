@@ -26,6 +26,8 @@ Prerequisites: Node.js 22+, pnpm 9+, and PostgreSQL 15+.
 3. Run `pnpm db:migrate`.
 4. Run `pnpm dev`.
 
+`pnpm db:migrate` applies only the migrations not yet recorded in the `schema_migrations` ledger, holding an advisory lock so concurrent deploys serialise. Each migration runs in its own transaction unless its first line is `-- migrate:no-transaction`, which is required for statements PostgreSQL forbids inside a transaction such as `CREATE INDEX CONCURRENTLY`. Applied migrations are immutable: editing one fails the next run with a checksum mismatch rather than silently diverging environments.
+
 The app runs at `http://localhost:5173`; the API runs at `http://localhost:3001`. In development, the app displays clearly labeled preview events when the API or database is unavailable.
 
 The read API exposes `GET /v1/events`, `GET /v1/games`, `GET /v1/coverage`, and `GET /v1/geocode`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details.

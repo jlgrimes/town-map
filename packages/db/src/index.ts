@@ -9,16 +9,39 @@ import type {
   EventSource,
   Game,
   NormalizedEvent,
+  NormalizedVenue,
   UserPreferences,
 } from "@town-map/contracts";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 let pool: Pool | undefined;
 
+function positiveNumberEnv(name: string, fallback: number) {
+  const configured = process.env[name];
+  if (configured === undefined) return fallback;
+  const value = Number(configured);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a non-negative number`);
+  return value;
+}
+
 export function getPool(): Pool {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required");
-  pool ??= new Pool({ connectionString, max: 10 });
+  pool ??= new Pool({
+    connectionString,
+    // One Railway PostgreSQL instance is shared by every API replica and all five
+    // collectors, so the per-process ceiling has to be deployment-configurable.
+    max: positiveNumberEnv("DATABASE_POOL_MAX", 10),
+    // Return idle connections rather than holding the whole pool open forever.
+    idleTimeoutMillis: positiveNumberEnv("DATABASE_IDLE_TIMEOUT_MS", 30_000),
+    // Fail fast when the pool is exhausted instead of queueing without bound.
+    connectionTimeoutMillis: positiveNumberEnv("DATABASE_CONNECTION_TIMEOUT_MS", 10_000),
+    // Defaults to disabled: a statement ceiling that is right for a user-facing
+    // request would abort long index builds and large collector batches. The API
+    // sets this explicitly; migrations opt out regardless.
+    statement_timeout: positiveNumberEnv("DATABASE_STATEMENT_TIMEOUT_MS", 0) || undefined,
+    application_name: process.env.SERVICE_NAME ?? "town-map",
+  });
   return pool;
 }
 
@@ -335,81 +358,176 @@ export async function saveUserPreferences(
   return toUserPreferences(result.rows[0]);
 }
 
-async function upsertVenue(client: PoolClient, source: EventSource, event: NormalizedEvent) {
-  if (!event.venue) return null;
-  const venue = event.venue;
-  const result = await client.query<{ id: string }>(
+/**
+ * Columns whose value defines an event record. A re-sync that leaves all of them
+ * unchanged must not write, or every collection cycle would rewrite every row and
+ * produce one dead tuple per event per run.
+ */
+const EVENT_MUTABLE_COLUMNS = [
+  "game", "venue_id", "title", "description", "starts_at", "ends_at", "timezone",
+  "status", "format", "event_type", "source_url", "registration_url", "price_amount",
+  "price_currency", "capacity", "is_online", "latitude", "longitude", "raw",
+] as const;
+
+const VENUE_MUTABLE_COLUMNS = [
+  "name", "address", "city", "region", "postal_code", "country",
+  "latitude", "longitude", "website", "phone",
+] as const;
+
+function assignExcluded(columns: readonly string[]) {
+  return columns.map((column) => `${column} = EXCLUDED.${column}`).join(", ");
+}
+
+function changedPredicate(table: string, columns: readonly string[]) {
+  return `(${columns.map((column) => `${table}.${column}`).join(", ")})
+     IS DISTINCT FROM
+     (${columns.map((column) => `EXCLUDED.${column}`).join(", ")})`;
+}
+
+/**
+ * Upserts every distinct venue referenced by `events` in one statement and
+ * returns a source-venue-id to primary-key map. Collectors routinely report
+ * hundreds of events at the same handful of venues, so deduplicating first turns
+ * one write per event into one write per venue.
+ */
+async function upsertVenues(client: PoolClient, source: EventSource, events: NormalizedEvent[]) {
+  const venues = new Map<string, NormalizedVenue>();
+  for (const event of events) if (event.venue) venues.set(event.venue.sourceVenueId, event.venue);
+  if (!venues.size) return new Map<string, string>();
+
+  const payload = [...venues.values()].map((venue) => ({
+    source_venue_id: venue.sourceVenueId,
+    name: venue.name,
+    address: venue.address,
+    city: venue.city,
+    region: venue.region,
+    postal_code: venue.postalCode,
+    country: venue.country,
+    latitude: venue.latitude,
+    longitude: venue.longitude,
+    website: venue.website,
+    phone: venue.phone,
+  }));
+
+  await client.query(
     `INSERT INTO venues (
        source, source_venue_id, name, address, city, region, postal_code, country,
        latitude, longitude, website, phone
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     )
+     SELECT $1, entry.source_venue_id, entry.name, entry.address, entry.city, entry.region,
+       entry.postal_code, entry.country, entry.latitude, entry.longitude, entry.website, entry.phone
+     FROM jsonb_to_recordset($2::jsonb) AS entry(
+       source_venue_id text, name text, address text, city text, region text,
+       postal_code text, country text, latitude double precision,
+       longitude double precision, website text, phone text
+     )
      ON CONFLICT (source, source_venue_id) DO UPDATE SET
-       name = EXCLUDED.name, address = EXCLUDED.address, city = EXCLUDED.city,
-       region = EXCLUDED.region, postal_code = EXCLUDED.postal_code,
-       country = EXCLUDED.country, latitude = EXCLUDED.latitude,
-       longitude = EXCLUDED.longitude, website = EXCLUDED.website,
-       phone = EXCLUDED.phone, updated_at = now()
-     RETURNING id`,
-    [
-      source, venue.sourceVenueId, venue.name, venue.address, venue.city, venue.region,
-      venue.postalCode, venue.country, venue.latitude, venue.longitude, venue.website, venue.phone,
-    ],
+       ${assignExcluded(VENUE_MUTABLE_COLUMNS)}, updated_at = now()
+     WHERE ${changedPredicate("venues", VENUE_MUTABLE_COLUMNS)}`,
+    [source, JSON.stringify(payload)],
   );
-  return result.rows[0].id;
+
+  // Unchanged rows are skipped by the guard above and so are absent from
+  // RETURNING; read the ids back separately to cover every referenced venue.
+  const result = await client.query<{ id: string; sourceVenueId: string }>(
+    `SELECT id, source_venue_id AS "sourceVenueId"
+     FROM venues
+     WHERE source = $1 AND source_venue_id = ANY($2::text[])`,
+    [source, [...venues.keys()]],
+  );
+  return new Map(result.rows.map((row) => [row.sourceVenueId, row.id]));
 }
 
-async function upsertEventWithClient(client: PoolClient, source: EventSource, event: NormalizedEvent) {
-  const venueId = await upsertVenue(client, source, event);
+async function upsertEventBatch(
+  client: PoolClient,
+  source: EventSource,
+  batch: NormalizedEvent[],
+  venueIds: Map<string, string>,
+) {
+  const payload = batch.map((event) => ({
+    source_event_id: event.sourceEventId,
+    game: event.game,
+    venue_id: event.venue ? venueIds.get(event.venue.sourceVenueId) ?? null : null,
+    title: event.title,
+    description: event.description,
+    starts_at: event.startsAt,
+    ends_at: event.endsAt,
+    timezone: event.timezone,
+    status: event.status,
+    format: event.format,
+    event_type: event.eventType,
+    source_url: event.sourceUrl,
+    registration_url: event.registrationUrl,
+    price_amount: event.priceAmount,
+    price_currency: event.priceCurrency,
+    capacity: event.capacity,
+    is_online: event.isOnline,
+    // Denormalised from the venue so one index can serve time, game and location.
+    latitude: event.venue?.latitude ?? null,
+    longitude: event.venue?.longitude ?? null,
+    raw: event.raw ?? {},
+  }));
+
   await client.query(
     `INSERT INTO events (
        source, source_event_id, game, venue_id, title, description, starts_at, ends_at,
        timezone, status, format, event_type, source_url, registration_url, price_amount,
-       price_currency, capacity, is_online, raw
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       price_currency, capacity, is_online, latitude, longitude, raw
+     )
+     SELECT $1, entry.source_event_id, entry.game, entry.venue_id, entry.title, entry.description,
+       entry.starts_at, entry.ends_at, entry.timezone, entry.status, entry.format, entry.event_type,
+       entry.source_url, entry.registration_url, entry.price_amount, entry.price_currency,
+       entry.capacity, entry.is_online, entry.latitude, entry.longitude,
+       COALESCE(entry.raw, '{}'::jsonb)
+     FROM jsonb_to_recordset($2::jsonb) AS entry(
+       source_event_id text, game text, venue_id uuid, title text, description text,
+       starts_at timestamptz, ends_at timestamptz, timezone text, status text, format text,
+       event_type text, source_url text, registration_url text, price_amount numeric(10, 2),
+       price_currency text, capacity integer, is_online boolean, latitude double precision,
+       longitude double precision, raw jsonb
+     )
      ON CONFLICT (source, source_event_id) DO UPDATE SET
-       game = EXCLUDED.game, venue_id = EXCLUDED.venue_id, title = EXCLUDED.title,
-       description = EXCLUDED.description, starts_at = EXCLUDED.starts_at,
-       ends_at = EXCLUDED.ends_at, timezone = EXCLUDED.timezone, status = EXCLUDED.status,
-       format = EXCLUDED.format, event_type = EXCLUDED.event_type,
-       source_url = EXCLUDED.source_url, registration_url = EXCLUDED.registration_url,
-       price_amount = EXCLUDED.price_amount,
-       price_currency = EXCLUDED.price_currency, capacity = EXCLUDED.capacity,
-       is_online = EXCLUDED.is_online, raw = EXCLUDED.raw,
-       last_seen_at = now(), updated_at = now()`,
-    [
-      source, event.sourceEventId, event.game, venueId, event.title, event.description,
-      event.startsAt, event.endsAt, event.timezone, event.status, event.format,
-      event.eventType, event.sourceUrl, event.registrationUrl, event.priceAmount, event.priceCurrency,
-      event.capacity, event.isOnline, JSON.stringify(event.raw),
-    ],
+       ${assignExcluded(EVENT_MUTABLE_COLUMNS)}, last_seen_at = now(), updated_at = now()
+     WHERE ${changedPredicate("events", EVENT_MUTABLE_COLUMNS)}`,
+    [source, JSON.stringify(payload)],
   );
 }
 
-export async function upsertEvents(source: EventSource, events: NormalizedEvent[], batchSize = 250) {
+/**
+ * Persists a collector's output. Venues are written once per distinct venue and
+ * events in bulk statements, and rows whose content is unchanged are left
+ * untouched.
+ *
+ * Returns the number of events persisted, which is every event supplied — not
+ * only those that changed. Because unchanged rows are skipped, `last_seen_at`
+ * marks the last time an event's content changed rather than the last time a
+ * collector observed it; detecting events withdrawn upstream needs a
+ * region-scoped set comparison rather than this column.
+ */
+export async function upsertEvents(source: EventSource, events: NormalizedEvent[], batchSize = 500) {
   if (!events.length) return 0;
+  // `ON CONFLICT` cannot touch the same row twice in one statement, so collapse
+  // duplicate ids first. Later entries win, matching the previous row-by-row order.
+  const deduplicated = [...new Map(events.map((event) => [event.sourceEventId, event])).values()];
   const client = await getPool().connect();
-  let written = 0;
   try {
-    for (let offset = 0; offset < events.length; offset += batchSize) {
-      const batch = events.slice(offset, offset + batchSize);
-      try {
-        await client.query("BEGIN");
-        for (const event of batch) await upsertEventWithClient(client, source, event);
-        await client.query("COMMIT");
-        written += batch.length;
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      }
+    await client.query("BEGIN");
+    const venueIds = await upsertVenues(client, source, deduplicated);
+    for (let offset = 0; offset < deduplicated.length; offset += batchSize) {
+      await upsertEventBatch(client, source, deduplicated.slice(offset, offset + batchSize), venueIds);
     }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }
-  return written;
+  return deduplicated.length;
 }
 
 export async function upsertEvent(source: EventSource, event: NormalizedEvent) {
-  await upsertEvents(source, [event], 1);
+  await upsertEvents(source, [event]);
 }
 
 type EventRow = Omit<EventListItem, "distanceMiles" | "venue"> & {
@@ -507,17 +625,21 @@ function searchBounds(latitude: number, longitude: number, radiusMeters: number)
   };
 }
 
-const eventSelect = `
+const eventColumns = `
   e.id, e.source, e.source_event_id AS "sourceEventId", e.game, e.title,
   e.description, e.starts_at AS "startsAt", e.ends_at AS "endsAt",
   e.timezone, e.status, e.format, e.event_type AS "eventType",
   e.source_url AS "sourceUrl", e.registration_url AS "registrationUrl",
   e.price_amount AS "priceAmount",
-  e.price_currency AS "priceCurrency", e.capacity, e.is_online AS "isOnline",
+  e.price_currency AS "priceCurrency", e.capacity, e.is_online AS "isOnline"`;
+
+const venueColumns = `
   v.name AS "venueName", v.address AS "venueAddress", v.city AS "venueCity",
   v.region AS "venueRegion", v.postal_code AS "venuePostalCode",
   v.latitude AS "venueLatitude", v.longitude AS "venueLongitude",
   v.website AS "venueWebsite"`;
+
+const eventSelect = `${eventColumns},${venueColumns}`;
 
 function toEventListItem(row: EventRow): EventListItem {
   return {
@@ -581,20 +703,23 @@ export async function listEvents(query: EventQuery, database: Pick<Pool, "query"
     const latitude = addValue(query.latitude);
     const radiusMeters = addValue(query.radiusMiles * METERS_PER_MILE);
     const bounds = searchBounds(query.latitude!, query.longitude!, query.radiusMiles * METERS_PER_MILE);
-    conditions.push("v.latitude IS NOT NULL", "v.longitude IS NOT NULL");
-    conditions.push(`v.latitude BETWEEN ${addValue(bounds.minLatitude)} AND ${addValue(bounds.maxLatitude)}`);
+    // Coordinates are denormalised onto `events`, so the bounding box, the time
+    // window and the game filter are all satisfiable from one index instead of a
+    // nested loop that rescans the game slice once per candidate venue.
+    conditions.push("e.latitude IS NOT NULL", "e.longitude IS NOT NULL");
+    conditions.push(`e.latitude BETWEEN ${addValue(bounds.minLatitude)} AND ${addValue(bounds.maxLatitude)}`);
     if (!bounds.coversAllLongitudes) {
       const minimumLongitude = addValue(bounds.minLongitude);
       const maximumLongitude = addValue(bounds.maxLongitude);
       conditions.push(bounds.crossesAntimeridian
-        ? `(v.longitude >= ${minimumLongitude} OR v.longitude <= ${maximumLongitude})`
-        : `v.longitude BETWEEN ${minimumLongitude} AND ${maximumLongitude}`);
+        ? `(e.longitude >= ${minimumLongitude} OR e.longitude <= ${maximumLongitude})`
+        : `e.longitude BETWEEN ${minimumLongitude} AND ${maximumLongitude}`);
     }
 
     const distance = `2 * ${EARTH_RADIUS_METERS} * asin(sqrt(LEAST(1.0, GREATEST(0.0,
-      power(sin(radians(v.latitude - ${latitude}) / 2), 2)
-      + cos(radians(${latitude})) * cos(radians(v.latitude))
-      * power(sin(radians(v.longitude - ${longitude}) / 2), 2)
+      power(sin(radians(e.latitude - ${latitude}) / 2), 2)
+      + cos(radians(${latitude})) * cos(radians(e.latitude))
+      * power(sin(radians(e.longitude - ${longitude}) / 2), 2)
     ))))`;
 
     const pageConditions = [`"distanceMeters" <= ${radiusMeters}`];
@@ -602,17 +727,25 @@ export async function listEvents(query: EventQuery, database: Pick<Pool, "query"
       pageConditions.push(`("distanceMeters", "startsAt", id) > (${addValue(cursor.distanceMeters)}::double precision, ${addValue(cursor.startsAt)}::timestamptz, ${addValue(cursor.id)}::uuid)`);
     }
     const limit = addValue(query.limit + 1);
+    // Rank on the narrow candidate set first, then read the wide event and venue
+    // columns for the page only.
     sql = `WITH candidates AS (
-      SELECT ${eventSelect},
+      SELECT e.id, e.venue_id, e.starts_at AS "startsAt",
         ${distance} AS "distanceMeters"
       FROM events e
-      JOIN venues v ON v.id = e.venue_id
       WHERE ${conditions.join(" AND ")}
+    ), page AS (
+      SELECT * FROM candidates
+      WHERE ${pageConditions.join(" AND ")}
+      ORDER BY "distanceMeters" ASC, "startsAt" ASC, id ASC
+      LIMIT ${limit}
     )
-    SELECT * FROM candidates
-    WHERE ${pageConditions.join(" AND ")}
-    ORDER BY "distanceMeters" ASC, "startsAt" ASC, id ASC
-    LIMIT ${limit}`;
+    SELECT ${eventSelect},
+      page."distanceMeters"
+    FROM page
+    JOIN events e ON e.id = page.id
+    LEFT JOIN venues v ON v.id = page.venue_id
+    ORDER BY page."distanceMeters" ASC, page."startsAt" ASC, page.id ASC`;
   } else {
     if (cursor) {
       conditions.push(`(e.starts_at, e.id) > (${addValue(cursor.startsAt)}::timestamptz, ${addValue(cursor.id)}::uuid)`);

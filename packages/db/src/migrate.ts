@@ -1,17 +1,19 @@
-import { readFile, readdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { closePool, getPool } from "./index.js";
-
-const migrationsDirectory = fileURLToPath(new URL("../migrations", import.meta.url));
+import { applyMigrations } from "./migrations.js";
 
 async function migrate() {
-  const files = (await readdir(migrationsDirectory)).filter((file) => file.endsWith(".sql")).sort();
-  for (const file of files) {
-    const sql = await readFile(`${migrationsDirectory}/${file}`, "utf8");
-    await getPool().query(sql);
-    console.info(`Applied ${file}`);
+  // A dedicated client keeps the session-scoped migration lock on one session.
+  const client = await getPool().connect();
+  try {
+    // Index builds and backfills legitimately run for minutes, so a statement
+    // ceiling configured for request traffic must not apply here.
+    await client.query("SET statement_timeout = 0");
+    const applied = await applyMigrations(client, (message) => console.info(message));
+    console.info(applied.length ? `Applied ${applied.length} migration(s)` : "Database is up to date");
+  } finally {
+    client.release();
+    await closePool();
   }
-  await closePool();
 }
 
 migrate().catch((error) => {

@@ -55,6 +55,8 @@ These endpoints are public interfaces used by official event locators, but they 
 - All timestamps are stored as UTC `timestamptz`; the source timezone is retained separately when available.
 - Events are idempotent on `(source, source_event_id)`.
 - Venues are idempotent on `(source, source_venue_id)`.
+- A collection run writes only the rows whose content actually changed. A re-sync that observes no upstream change performs no write, so `last_seen_at` marks the last time an event's content changed rather than the last time a collector observed it. Detecting events withdrawn upstream therefore needs a region-scoped comparison of returned identifiers, not this column.
+- Venue coordinates are copied onto each event so one index can serve the time, game and location predicates together. The event copy is refreshed on every upsert, so a corrected venue location reaches its events within one collection cycle.
 - `source_url` is the canonical event-details page at the upstream source; `registration_url` is populated only when a distinct, direct signup page is available.
 - Raw source records are retained as JSONB for debugging and future reprocessing.
 - Each configured region is persisted with its cadence, next due time, lease, freshness timestamps, and last error. Configuration is authoritative: removing a region disables future collection without deleting historical events.

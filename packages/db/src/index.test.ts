@@ -64,8 +64,9 @@ describe("listEvents", () => {
     expect(page.events.map((event) => event.distanceMiles)).toEqual([1, 2]);
     expect(page.nextCursor).toBeTypeOf("string");
     const [sql, values] = query.mock.calls[0] as [string, unknown[]];
-    expect(sql).toContain("v.latitude BETWEEN");
-    expect(sql).toContain("v.longitude BETWEEN");
+    expect(sql).toContain("e.latitude BETWEEN");
+    expect(sql).toContain("e.longitude BETWEEN");
+    expect(sql).not.toContain("JOIN venues v ON v.id = e.venue_id");
     expect(sql).toContain("asin(sqrt");
     expect(sql).toContain('WHERE "distanceMeters" <=');
     expect(sql).toContain('ORDER BY "distanceMeters" ASC, "startsAt" ASC, id ASC');
