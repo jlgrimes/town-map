@@ -1,4 +1,4 @@
-import type { EventQuery } from "@town-map/contracts";
+import type { EventLookup } from "./index.js";
 import type { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { getUserPreferences, InvalidEventCursorError, listCoverage, listEvents, saveUserPreferences } from "./index.js";
@@ -46,7 +46,7 @@ function databaseReturning(rows: ReturnType<typeof row>[]) {
   return { database: { query } as unknown as Pick<Pool, "query">, query };
 }
 
-const spatialQuery: EventQuery = {
+const spatialQuery: EventLookup = {
   games: ["magic"],
   latitude: 41.8781,
   longitude: -87.6298,

@@ -19,7 +19,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { GAME_LABELS, type EventListItem, type Game } from "@town-map/contracts";
+import { type EventListItem, type Game } from "@town-map/contracts";
 import {
   ChevronDown,
   CircleAlert,
@@ -36,10 +36,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEve
 import { fetchEvents, fetchUserPreferences, geocodePlace, saveUserPreferences } from "./api";
 import { demoEvents } from "./demo-events";
 import { GameIcon } from "./GameIcon";
+import { useGameCatalog, type GameCatalog } from "./games";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
-const ALL_GAMES: Game[] = ["pokemon", "magic", "yugioh", "onepiece", "riftbound"];
 const PAGE_SIZE = 24;
 
 type DateFilter = "all" | "today" | "tomorrow" | "week";
@@ -83,10 +83,12 @@ const guestAuth: AppAuth = {
   getToken: async () => null,
 };
 
-function initialGames() {
+// Null means "not specified", so every game in the catalog is selected once it
+// loads. The slugs themselves are validated against the catalog, not a constant.
+function initialGames(): Game[] | null {
   const rawGames = initialParams.get("games");
-  if (rawGames === null) return ALL_GAMES;
-  return rawGames.split(",").filter((game): game is Game => ALL_GAMES.includes(game as Game));
+  if (rawGames === null) return null;
+  return rawGames.split(",").filter(Boolean);
 }
 
 function initialDateFilter(): DateFilter {
@@ -181,7 +183,7 @@ function formatPrice(event: EventListItem) {
   }
 }
 
-function GameFilters({ value, onChange }: { value: Game[]; onChange: (games: Game[]) => void }) {
+function GameFilters({ value, onChange, catalog }: { value: Game[]; onChange: (games: Game[]) => void; catalog: GameCatalog }) {
   function toggleGame(game: Game) {
     onChange(value.includes(game) ? value.filter((item) => item !== game) : [...value, game]);
   }
@@ -189,7 +191,7 @@ function GameFilters({ value, onChange }: { value: Game[]; onChange: (games: Gam
   return (
     <fieldset className="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Games">
       <legend className="sr-only">Games</legend>
-      {ALL_GAMES.map((game) => {
+      {catalog.ids.map((game) => {
         const selected = value.includes(game);
         return (
           <Button
@@ -198,9 +200,9 @@ function GameFilters({ value, onChange }: { value: Game[]; onChange: (games: Gam
             variant={selected ? "secondary" : "ghost"}
             size="icon"
             className={`size-11 ${selected ? "ring-1 ring-primary/40" : "opacity-45"}`}
-            aria-label={`${selected ? "Exclude" : "Include"} ${GAME_LABELS[game]} events`}
+            aria-label={`${selected ? "Exclude" : "Include"} ${catalog.label(game)} events`}
             aria-pressed={selected}
-            title={GAME_LABELS[game]}
+            title={catalog.label(game)}
             onClick={() => toggleGame(game)}
           >
             <GameIcon game={game} className="size-6 object-contain" decorative />
@@ -211,7 +213,7 @@ function GameFilters({ value, onChange }: { value: Game[]; onChange: (games: Gam
   );
 }
 
-function GamePreferencePicker({ value, onChange }: { value: Game[]; onChange: (games: Game[]) => void }) {
+function GamePreferencePicker({ value, onChange, catalog }: { value: Game[]; onChange: (games: Game[]) => void; catalog: GameCatalog }) {
   function toggleGame(game: Game) {
     onChange(value.includes(game) ? value.filter((item) => item !== game) : [...value, game]);
   }
@@ -220,7 +222,7 @@ function GamePreferencePicker({ value, onChange }: { value: Game[]; onChange: (g
     <fieldset>
       <legend className="mb-2 text-sm font-medium">Games you play</legend>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {ALL_GAMES.map((game) => {
+        {catalog.ids.map((game) => {
           const selected = value.includes(game);
           return (
             <Button
@@ -232,7 +234,7 @@ function GamePreferencePicker({ value, onChange }: { value: Game[]; onChange: (g
               onClick={() => toggleGame(game)}
             >
               <GameIcon game={game} className="size-6 shrink-0 object-contain" decorative />
-              <span className="truncate">{GAME_LABELS[game]}</span>
+              <span className="truncate">{catalog.label(game)}</span>
             </Button>
           );
         })}
@@ -357,7 +359,16 @@ function LoadingCards() {
 }
 
 export function App({ auth = guestAuth }: { auth?: AppAuth }) {
-  const [selectedGames, setSelectedGames] = useState<Game[]>(initialGames);
+  const catalog = useGameCatalog();
+  // Null until the user chooses, so a game added to the catalogue is selected by
+  // default rather than being invisible to anyone with an existing URL.
+  const [gameSelection, setSelectedGames] = useState<Game[] | null>(initialGames);
+  const selectedGames = useMemo(
+    () => (gameSelection === null
+      ? catalog.ids
+      : gameSelection.filter((game) => catalog.ids.includes(game))),
+    [gameSelection, catalog],
+  );
   const [events, setEvents] = useState<EventListItem[]>([]);
   const [query, setQuery] = useState(initialParams.get("q") ?? "");
   const [dateFilter, setDateFilter] = useState<DateFilter>(initialDateFilter);
@@ -472,7 +483,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
 
   useEffect(() => {
     const params = new URLSearchParams();
-    if (selectedGames.length !== ALL_GAMES.length) params.set("games", selectedGames.join(","));
+    if (selectedGames.length !== catalog.ids.length) params.set("games", selectedGames.join(","));
     if (query) params.set("q", query);
     if (dateFilter !== "all") params.set("date", dateFilter);
     if (viewMode !== "list") params.set("view", viewMode);
@@ -496,7 +507,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       if (!selectedGames.includes(event.game) || !matchesDate(event, dateFilter)) return false;
       const text = [
         event.title,
-        GAME_LABELS[event.game],
+        catalog.label(event.game),
         event.venue?.name,
         event.venue?.address,
         event.venue?.city,
@@ -618,7 +629,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     title: "Choose at least one game",
     description: "Select the games you want to include in the event list.",
     action: "Select all games",
-    onClick: () => setSelectedGames(ALL_GAMES),
+    onClick: () => setSelectedGames(catalog.ids),
   } : status === "error" ? {
     title: "Events could not be loaded",
     description: "The event service may be temporarily unavailable. Your filters are still saved in this URL.",
@@ -628,7 +639,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     title: "No matching events",
     description: `Try a wider distance, another date, or fewer search terms near ${locationLabel}.`,
     action: "Clear filters",
-    onClick: () => { setQuery(""); setDateFilter("all"); setSelectedGames(ALL_GAMES); },
+    onClick: () => { setQuery(""); setDateFilter("all"); setSelectedGames(catalog.ids); },
   };
 
   return (
@@ -677,7 +688,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                       />
                       <p className="text-xs text-muted-foreground">A city, ZIP code, or full address works.</p>
                     </div>
-                    <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} />
+                    <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
                     {preferenceGamesDraft.length === 0 && <p className="text-xs text-muted-foreground">Choose at least one game.</p>}
                     {homeNotice && <p role="status" className="text-sm text-destructive">{homeNotice}</p>}
                     <Button
@@ -735,7 +746,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                             className="h-10"
                           />
                         </div>
-                        <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} />
+                        <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
                         {homeNotice && <p role="status" className="text-xs text-destructive">{homeNotice}</p>}
                         <Button
                           type="submit"
@@ -830,7 +841,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               <DateFilters value={dateFilter} onChange={setDateFilter} />
             </div>
             <div className="flex items-center justify-between gap-2 sm:justify-end">
-              {!auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} />}
+              {!auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} catalog={catalog} />}
               <div>
                 <Label htmlFor="radius" className="sr-only">Search radius</Label>
                 <select
@@ -930,6 +941,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                     onSelect={handleMapSelect}
                     onPreview={setHighlightedEventId}
                     onDeselect={handleClearSelectedEvent}
+                    catalog={catalog}
                   />
                 </Suspense>
               )}

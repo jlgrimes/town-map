@@ -1,6 +1,12 @@
 # Town Map
 
-Town Map is a web and mobile event finder for Pokémon, Magic: The Gathering, Yu-Gi-Oh!, One Piece, and Riftbound. It is a pnpm/Turborepo monorepo with a Vite + React + Capacitor client, a Fastify read API, PostgreSQL storage, and one independently deployable collector per game.
+Town Map is a web and mobile event finder, currently covering Pokémon, Magic: The Gathering, Yu-Gi-Oh!, One Piece, and Riftbound. It is a pnpm/Turborepo monorepo with a Vite + React + Capacitor client, a Fastify read API, PostgreSQL storage, and one independently deployable collector per game.
+
+## Event taxonomy
+
+Games and their categories are rows in PostgreSQL, not a list in code. A category is the vertical (card games today; music or sports later) and a game is the specific thing a user filters on. Adding one is an insert into `categories` and `games` plus a collector to populate it — no migration, no enum, no redeploy of the client, which falls back to a readable label and a generic marker for a game it has no bundled artwork for.
+
+`GET /v1/games` serves the registry, and `GET /v1/events` accepts either `games=` or `categories=`; a category is expanded to its games before the query runs, so the read path never joins the taxonomy tables. Slugs not in the registry are rejected rather than silently matching nothing. A game can be disabled to retire it from the filters while keeping the events already collected under it.
 
 ## Project layout
 

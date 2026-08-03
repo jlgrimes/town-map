@@ -1,26 +1,22 @@
-import { GAME_LABELS, type Game } from "@town-map/contracts";
-
-const GAME_ICONS: Record<Game, string> = {
-  pokemon: "/pokeball.png",
-  magic: "/planeswalk.png",
-  yugioh: "/blue-eyes.png",
-  onepiece: "/onepiece.svg",
-  riftbound: "/riftbound.svg",
-};
+import { fallbackGameLabel, type Game } from "@town-map/contracts";
+import { gameIconUrl } from "./games";
 
 export function GameIcon({
   game,
+  label,
   className = "size-5",
   decorative = false,
 }: {
   game: Game;
+  /** Registry label. Falls back to the slug when the caller has no catalog. */
+  label?: string;
   className?: string;
   decorative?: boolean;
 }) {
   return (
     <img
-      src={GAME_ICONS[game]}
-      alt={decorative ? "" : GAME_LABELS[game]}
+      src={gameIconUrl(game)}
+      alt={decorative ? "" : label ?? fallbackGameLabel(game)}
       className={className}
       width={24}
       height={24}

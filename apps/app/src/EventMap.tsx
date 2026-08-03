@@ -5,34 +5,27 @@ import {
   type MapRef,
   type MapViewport,
 } from "@/components/ui/map";
-import { GAME_LABELS, type EventListItem, type Game } from "@town-map/contracts";
+import { type EventListItem, type Game } from "@town-map/contracts";
 import { X } from "lucide-react";
 import type { ExpressionSpecification, GeoJSONSource, MapLayerMouseEvent } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GameIcon } from "./GameIcon";
+import { gameMarkerUrl, type GameCatalog } from "./games";
 
 const MAP_STYLES = {
   light: "https://tiles.openfreemap.org/styles/bright",
   dark: "https://tiles.openfreemap.org/styles/dark",
 };
 
-const GAME_IMAGES: Record<Game, string> = {
-  pokemon: "/pokeball.png",
-  magic: "/planeswalk.png",
-  yugioh: "/blue-eyes.png",
-  onepiece: "/onepiece.png",
-  riftbound: "/riftbound.png",
-};
-
-const GAME_ORDER: Game[] = ["pokemon", "magic", "yugioh", "onepiece", "riftbound"];
-
 const SOURCE_ID = "event-locations";
 const CLUSTER_LAYER_ID = "event-clusters";
 const CLUSTER_COUNT_LAYER_ID = "event-cluster-count";
 const ACTIVE_POINT_LAYER_ID = "active-event-point";
-const POINT_LAYER_IDS = Object.fromEntries(
-  GAME_ORDER.map((game) => [game, `event-points-${game}`]),
-) as Record<Game, string>;
+const POINT_LAYER_PREFIX = "event-points-";
+
+function pointLayerId(game: Game) {
+  return `${POINT_LAYER_PREFIX}${game}`;
+}
 
 type EventPointProperties = {
   id: string;
@@ -53,8 +46,8 @@ type StoreGroup = {
   games: Game[];
 };
 
-function markerOffsetExpression(game: Game): ExpressionSpecification {
-  const precedingGames = GAME_ORDER.slice(0, GAME_ORDER.indexOf(game));
+function markerOffsetExpression(game: Game, gameOrder: Game[]): ExpressionSpecification {
+  const precedingGames = gameOrder.slice(0, gameOrder.indexOf(game));
   const precedingRanks = precedingGames.map((precedingGame): ExpressionSpecification => [
       "case",
       ["==", ["get", `has_${precedingGame}`], true],
@@ -67,7 +60,7 @@ function markerOffsetExpression(game: Game): ExpressionSpecification {
       ? precedingRanks[0]
       : ["+", ...precedingRanks];
   const expression: unknown[] = ["case"];
-  for (let gameCount = 1; gameCount <= GAME_ORDER.length; gameCount += 1) {
+  for (let gameCount = 1; gameCount <= gameOrder.length; gameCount += 1) {
     for (let gameRank = 0; gameRank < gameCount; gameRank += 1) {
       expression.push(
         ["all", ["==", ["get", "gameCount"], gameCount], ["==", rank, gameRank]],
@@ -87,7 +80,7 @@ function storeKey(event: EventListItem) {
   return `${name}|${coordinates}`;
 }
 
-function groupEventsByStore(events: EventListItem[]) {
+function groupEventsByStore(events: EventListItem[], gameOrder: Game[]) {
   const stores = new globalThis.Map<string, StoreGroup>();
   for (const event of events) {
     const venue = event.venue;
@@ -112,15 +105,15 @@ function groupEventsByStore(events: EventListItem[]) {
 
   return [...stores.values()].map((store) => {
     store.events.sort((a, b) => {
-      const gameDifference = GAME_ORDER.indexOf(a.game) - GAME_ORDER.indexOf(b.game);
+      const gameDifference = gameOrder.indexOf(a.game) - gameOrder.indexOf(b.game);
       return gameDifference || new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
     });
-    store.games = GAME_ORDER.filter((game) => store.events.some((event) => event.game === game));
+    store.games = gameOrder.filter((game) => store.events.some((event) => event.game === game));
     return store;
   });
 }
 
-function StoreSchedule({ store, onClose }: { store: StoreGroup; onClose: () => void }) {
+function StoreSchedule({ store, onClose, catalog }: { store: StoreGroup; onClose: () => void; catalog: GameCatalog }) {
   return (
     <aside
       aria-label={`${store.name} events`}
@@ -148,14 +141,14 @@ function StoreSchedule({ store, onClose }: { store: StoreGroup; onClose: () => v
         </button>
       </div>
       <div className="max-h-[min(22rem,42svh)] overflow-y-auto overscroll-contain px-3">
-        {GAME_ORDER.map((game) => {
+        {catalog.ids.map((game) => {
           const gameEvents = store.events.filter((event) => event.game === game);
           if (gameEvents.length === 0) return null;
           return (
-            <section key={game} className="py-2 first:pt-2 last:pb-0" aria-label={`${GAME_LABELS[game]} events`}>
+            <section key={game} className="py-2 first:pt-2 last:pb-0" aria-label={`${catalog.label(game)} events`}>
               <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                 <GameIcon game={game} className="size-4 shrink-0 object-contain" decorative />
-                <span>{GAME_LABELS[game]}</span>
+                <span>{catalog.label(game)}</span>
               </div>
               <ol className="divide-y">
                 {gameEvents.map((event) => (
@@ -196,10 +189,12 @@ function EventClusterLayer({
   data,
   onSelect,
   onPreview,
+  gameOrder,
 }: {
   data: GeoJSON.FeatureCollection<GeoJSON.Point, EventPointProperties>;
   onSelect: (eventId: string) => void;
   onPreview: (eventId: string | null) => void;
+  gameOrder: Game[];
 }) {
   const { map, isLoaded } = useMap();
   const dataRef = useRef(data);
@@ -215,10 +210,10 @@ function EventClusterLayer({
     let cancelled = false;
 
     async function addEventLayers() {
-      for (const [game, imageUrl] of Object.entries(GAME_IMAGES) as Array<[Game, string]>) {
+      for (const game of gameOrder) {
         const imageId = `event-${game}`;
         if (mapInstance.hasImage(imageId)) continue;
-        const image = await mapInstance.loadImage(imageUrl);
+        const image = await mapInstance.loadImage(gameMarkerUrl(game));
         if (cancelled) return;
         if (!mapInstance.hasImage(imageId)) mapInstance.addImage(imageId, image.data, { pixelRatio: 8 });
       }
@@ -269,16 +264,16 @@ function EventClusterLayer({
           "circle-opacity": 0.88,
         },
       });
-      for (const game of GAME_ORDER) {
+      for (const game of gameOrder) {
         mapInstance.addLayer({
-          id: POINT_LAYER_IDS[game],
+          id: pointLayerId(game),
           type: "symbol",
           source: SOURCE_ID,
           filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", `has_${game}`], true]],
           layout: {
             "icon-image": `event-${game}`,
             "icon-size": 1,
-            "icon-offset": markerOffsetExpression(game),
+            "icon-offset": markerOffsetExpression(game, gameOrder),
             "icon-allow-overlap": true,
           },
         });
@@ -320,7 +315,8 @@ function EventClusterLayer({
     };
 
     map.on("click", CLUSTER_LAYER_ID, handleClusterClick);
-    for (const layerId of Object.values(POINT_LAYER_IDS)) {
+    const pointLayerIds = gameOrder.map(pointLayerId);
+    for (const layerId of pointLayerIds) {
       map.on("click", layerId, handlePointClick);
       map.on("mouseenter", layerId, handlePointEnter);
       map.on("mouseleave", layerId, handlePointLeave);
@@ -331,19 +327,19 @@ function EventClusterLayer({
     return () => {
       cancelled = true;
       map.off("click", CLUSTER_LAYER_ID, handleClusterClick);
-      for (const layerId of Object.values(POINT_LAYER_IDS)) {
+      for (const layerId of pointLayerIds) {
         map.off("click", layerId, handlePointClick);
         map.off("mouseenter", layerId, handlePointEnter);
         map.off("mouseleave", layerId, handlePointLeave);
       }
       map.off("mouseenter", CLUSTER_LAYER_ID, handleClusterEnter);
       map.off("mouseleave", CLUSTER_LAYER_ID, handleClusterLeave);
-      for (const layerId of [...Object.values(POINT_LAYER_IDS), ACTIVE_POINT_LAYER_ID, CLUSTER_COUNT_LAYER_ID, CLUSTER_LAYER_ID]) {
+      for (const layerId of [...pointLayerIds, ACTIVE_POINT_LAYER_ID, CLUSTER_COUNT_LAYER_ID, CLUSTER_LAYER_ID]) {
         if (map.getLayer(layerId)) map.removeLayer(layerId);
       }
       if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
     };
-  }, [isLoaded, map]);
+  }, [isLoaded, map, gameOrder]);
 
   useEffect(() => {
     if (!isLoaded || !map) return;
@@ -363,6 +359,7 @@ export function EventMap({
   onSelect,
   onPreview,
   onDeselect,
+  catalog,
 }: {
   center: { latitude: number; longitude: number };
   events: EventListItem[];
@@ -372,6 +369,7 @@ export function EventMap({
   onSelect: (eventId: string) => void;
   onPreview: (eventId: string | null) => void;
   onDeselect: () => void;
+  catalog: GameCatalog;
 }) {
   const mapRef = useRef<MapRef>(null);
   const [viewport, setViewport] = useState<MapViewport>({
@@ -395,7 +393,8 @@ export function EventMap({
     return () => window.cancelAnimationFrame(frame);
   }, [active]);
 
-  const stores = useMemo(() => groupEventsByStore(events), [events]);
+  const gameOrder = catalog.ids;
+  const stores = useMemo(() => groupEventsByStore(events, gameOrder), [events, gameOrder]);
   const pointData = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point, EventPointProperties>>(() => ({
     type: "FeatureCollection",
     features: stores.map((store) => ({
@@ -406,10 +405,10 @@ export function EventMap({
         eventId: store.events[0].id,
         gameCount: store.games.length,
         active: store.events.some((event) => event.id === activeEventId),
-        ...Object.fromEntries(GAME_ORDER.map((game) => [`has_${game}`, store.games.includes(game)])),
+        ...Object.fromEntries(gameOrder.map((game) => [`has_${game}`, store.games.includes(game)])),
       },
     })),
-  }), [activeEventId, stores]);
+  }), [activeEventId, stores, gameOrder]);
 
   const selectedStore = selectedEventId
     ? stores.find((store) => store.events.some((event) => event.id === selectedEventId)) ?? null
@@ -441,11 +440,11 @@ export function EventMap({
         className="h-full min-h-0"
       >
         <MapControls position="top-left" showZoom />
-        <EventClusterLayer data={pointData} onSelect={onSelect} onPreview={onPreview} />
+        <EventClusterLayer data={pointData} onSelect={onSelect} onPreview={onPreview} gameOrder={gameOrder} />
       </Map>
       {selectedStore && (
         <div className="absolute right-2 bottom-12 left-2 z-10 sm:right-3 sm:left-auto sm:w-80">
-          <StoreSchedule store={selectedStore} onClose={onDeselect} />
+          <StoreSchedule store={selectedStore} onClose={onDeselect} catalog={catalog} />
         </div>
       )}
     </div>

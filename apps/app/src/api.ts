@@ -1,4 +1,11 @@
-import { UserPreferencesSchema, type EventPage, type Game, type HomeLocation, type UserPreferences } from "@town-map/contracts";
+import {
+  GameRegistrySchema,
+  UserPreferencesSchema,
+  type EventPage,
+  type Game,
+  type HomeLocation,
+  type UserPreferences,
+} from "@town-map/contracts";
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
 
@@ -18,6 +25,12 @@ export async function fetchEvents(options: {
   const response = await fetch(`${API_URL}/v1/events?${params}`, { signal: options.signal });
   if (!response.ok) throw new Error(`Event API returned ${response.status}`);
   return response.json() as Promise<EventPage>;
+}
+
+export async function fetchGameRegistry(signal?: AbortSignal) {
+  const response = await fetch(`${API_URL}/v1/games`, { signal });
+  if (!response.ok) throw new Error(`Game registry returned ${response.status}`);
+  return GameRegistrySchema.parse(await response.json());
 }
 
 export async function geocodePlace(query: string, signal?: AbortSignal) {

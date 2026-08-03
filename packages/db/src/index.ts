@@ -1,9 +1,11 @@
 import type {
+  Category,
   CoverageRegion,
   CoverageRegionStatus,
   CoverageResponse,
   CoverageSource,
   EventListItem,
+  GameRegistry,
   EventPage,
   EventQuery,
   EventSource,
@@ -238,6 +240,29 @@ function coverageStatus(region: CoverageRegionRow, now: Date): CoverageRegionSta
   if (!region.lastSuccessAt) return "pending";
   const staleAt = region.lastSuccessAt.getTime() + region.cadenceMinutes * 2 * 60_000;
   return staleAt < now.getTime() ? "stale" : "fresh";
+}
+
+/**
+ * Reads the game and category taxonomy.
+ *
+ * Ordered by `position` then label so display order is a data decision. Disabled
+ * games are omitted: a game is disabled to retire it from the filters without
+ * deleting the events already collected under it.
+ */
+export async function listGameRegistry(database: Queryable = getPool()): Promise<GameRegistry> {
+  const [gameResult, categoryResult] = await Promise.all([
+    database.query<{ id: Game; label: string; category: Category }>(
+      `SELECT g.slug AS id, g.label, g.category_slug AS category
+       FROM games g
+       JOIN categories c ON c.slug = g.category_slug
+       WHERE g.enabled = true
+       ORDER BY c.position, c.slug, g.position, g.label`,
+    ),
+    database.query<{ id: Category; label: string }>(
+      `SELECT slug AS id, label FROM categories ORDER BY position, slug`,
+    ),
+  ]);
+  return { games: gameResult.rows, categories: categoryResult.rows };
 }
 
 /**
@@ -610,7 +635,7 @@ function decodeCursor(value: string | undefined, expectedKind: EventCursor["kind
   }
 }
 
-function cursorScope(query: EventQuery) {
+function cursorScope(query: Omit<EventQuery, "categories">) {
   return JSON.stringify({
     games: [...query.games].sort(),
     to: query.to ?? null,
@@ -691,7 +716,13 @@ function toEventListItem(row: EventRow): EventListItem {
   };
 }
 
-export async function listEvents(query: EventQuery, database: Pick<Pool, "query"> = getPool()): Promise<EventPage> {
+/**
+ * Categories are expanded to their games by the API, so they never reach the
+ * query and the hot path stays free of a join against the taxonomy tables.
+ */
+export type EventLookup = Omit<EventQuery, "categories">;
+
+export async function listEvents(query: EventLookup, database: Pick<Pool, "query"> = getPool()): Promise<EventPage> {
   const spatial = query.latitude !== undefined && query.longitude !== undefined;
   const scope = cursorScope(query);
   const cursor = decodeCursor(query.cursor, spatial ? "spatial" : "chronological", scope);

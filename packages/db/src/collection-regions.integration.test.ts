@@ -25,8 +25,10 @@ integration("regional collection leases", () => {
       firstClient.query(`SET search_path TO ${schema}, public`),
       secondClient.query(`SET search_path TO ${schema}, public`),
     ]);
+    // Test files share one database, so this may wait on the migration lock
+    // held by another file before it can start.
     await applyMigrations(firstClient);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!firstClient || !secondClient) return;

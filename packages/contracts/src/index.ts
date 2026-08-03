@@ -1,17 +1,46 @@
 import { z } from "zod";
 
-export const GameSchema = z.enum(["pokemon", "magic", "yugioh", "onepiece", "riftbound"]);
+/**
+ * Games, categories and sources are rows in PostgreSQL, not a closed set in
+ * code, so that adding an event type is a data change rather than an edit to a
+ * zod enum, a CHECK constraint and a label map in lockstep.
+ *
+ * These schemas therefore validate the *shape* of a slug. Whether a given slug
+ * exists is checked against the registry the API serves from the database.
+ */
+const SlugSchema = z.string().trim().min(1).max(64).regex(
+  /^[a-z0-9][a-z0-9-]*$/,
+  "Slugs are lowercase alphanumeric words separated by hyphens",
+);
+
+export const GameSchema = SlugSchema;
 export type Game = z.infer<typeof GameSchema>;
 
-export const SourceSchema = z.enum([
-  "pokedata-events",
-  "wotc-locator",
-  "konami-kcgn",
-  "konami-events",
-  "bandai-tcg-plus",
-  "riftbound-locator",
-]);
+export const CategorySchema = SlugSchema;
+export type Category = z.infer<typeof CategorySchema>;
+
+export const SourceSchema = SlugSchema;
 export type EventSource = z.infer<typeof SourceSchema>;
+
+export const CategoryDefinitionSchema = z.object({
+  id: CategorySchema,
+  label: z.string().min(1),
+});
+export type CategoryDefinition = z.infer<typeof CategoryDefinitionSchema>;
+
+export const GameDefinitionSchema = z.object({
+  id: GameSchema,
+  label: z.string().min(1),
+  category: CategorySchema,
+});
+export type GameDefinition = z.infer<typeof GameDefinitionSchema>;
+
+/** Response of `GET /v1/games`, ordered for display by the server. */
+export const GameRegistrySchema = z.object({
+  games: z.array(GameDefinitionSchema),
+  categories: z.array(CategoryDefinitionSchema),
+});
+export type GameRegistry = z.infer<typeof GameRegistrySchema>;
 
 export const VenueSchema = z.object({
   sourceVenueId: z.string(),
@@ -85,6 +114,9 @@ export type EventListItem = z.infer<typeof EventListItemSchema>;
 
 export const EventQuerySchema = z.object({
   games: z.array(GameSchema).default([]),
+  // Expanded to the games it contains before the query runs, so the hot path
+  // never joins the taxonomy tables.
+  categories: z.array(CategorySchema).default([]),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
@@ -168,7 +200,9 @@ export const HomeAddressSchema = z.string().trim().min(1).max(500);
 
 export const UserPreferencesUpdateSchema = z.object({
   homeAddress: HomeAddressSchema,
-  selectedGames: z.array(GameSchema).min(1).max(GameSchema.options.length),
+  // Only the shape is checked here; the API rejects slugs that are not in the
+  // registry, which no longer has a compile-time length to bound against.
+  selectedGames: z.array(GameSchema).min(1).max(64),
 });
 
 export const UserPreferencesSchema = z.object({
@@ -178,10 +212,13 @@ export const UserPreferencesSchema = z.object({
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
-export const GAME_LABELS: Record<Game, string> = {
-  pokemon: "Pokémon",
-  magic: "Magic",
-  yugioh: "Yu-Gi-Oh!",
-  onepiece: "One Piece",
-  riftbound: "Riftbound",
-};
+/**
+ * Fallback label for a slug the client has no registry entry for, so an event
+ * type added to the database still renders in a client built before it existed.
+ */
+export function fallbackGameLabel(game: Game) {
+  return game
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}

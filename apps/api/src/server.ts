@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { clerkClient, clerkPlugin, getAuth } from "@clerk/fastify";
-import { EventQuerySchema, GAME_LABELS, GameSchema, UserPreferencesUpdateSchema } from "@town-map/contracts";
+import { EventQuerySchema, UserPreferencesUpdateSchema, type GameRegistry } from "@town-map/contracts";
 import {
   closePool,
   getPool,
@@ -9,6 +9,7 @@ import {
   InvalidEventCursorError,
   listCoverage,
   listEvents,
+  listGameRegistry,
   saveUserPreferences,
 } from "@town-map/db";
 import Fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
@@ -104,10 +105,27 @@ app.get("/health", async (_request, reply) => {
   }
 });
 
+/**
+ * The taxonomy changes only when a row is written, so it is held briefly in
+ * process rather than read on every event query that filters by category.
+ */
+const registryTtlMs = Number(process.env.GAME_REGISTRY_TTL_MS ?? 300_000);
+let registryCache: { expiresAt: number; value: GameRegistry } | undefined;
+
+async function gameRegistry(): Promise<GameRegistry> {
+  if (registryCache && registryCache.expiresAt > Date.now()) return registryCache.value;
+  const value = await listGameRegistry();
+  registryCache = { expiresAt: Date.now() + registryTtlMs, value };
+  return value;
+}
+
 app.get("/v1/games", async (_request, reply) => {
-  // Compiled into the build; only a deploy can change it.
-  reply.header("Cache-Control", publicCache(3_600));
-  return { games: GameSchema.options.map((id) => ({ id, label: GAME_LABELS[id] })) };
+  if (!process.env.DATABASE_URL) {
+    reply.header("Cache-Control", "no-store");
+    return reply.code(503).send({ error: "The event database is not configured." });
+  }
+  reply.header("Cache-Control", publicCache(300));
+  return gameRegistry();
 });
 
 app.get("/v1/coverage", async (_request, reply) => {
@@ -207,6 +225,13 @@ app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
   if (!parsed.success) {
     return reply.code(400).send({ error: "Invalid preferences", details: parsed.error.flatten() });
   }
+  // The schema only checks slug shape now, so existence is checked against the
+  // registry. Without this a typo would be stored and silently match nothing.
+  const knownGames = new Set((await gameRegistry()).games.map((game) => game.id));
+  const unknownGames = parsed.data.selectedGames.filter((game) => !knownGames.has(game));
+  if (unknownGames.length) {
+    return reply.code(400).send({ error: `Unknown game: ${unknownGames.join(", ")}` });
+  }
   // PostgreSQL is the source of truth, so it is written first. Mirroring to Clerk
   // afterwards can fail without leaving onboarding marked complete against no
   // stored preferences; the next save reconciles it.
@@ -226,7 +251,8 @@ app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
 
 app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {
   const games = request.query.games?.split(",").filter(Boolean) ?? [];
-  const parsed = EventQuerySchema.safeParse({ ...request.query, games });
+  const categories = request.query.categories?.split(",").filter(Boolean) ?? [];
+  const parsed = EventQuerySchema.safeParse({ ...request.query, games, categories });
   reply.header("Cache-Control", "no-store");
   if (!parsed.success) {
     return reply.code(400).send({ error: "Invalid query", details: parsed.error.flatten() });
@@ -235,7 +261,33 @@ app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async
     return reply.code(503).send({ error: "The event database is not configured." });
   }
   try {
-    const page = await listEvents(parsed.data);
+    const registry = await gameRegistry();
+    const knownGames = new Set(registry.games.map((game) => game.id));
+    const knownCategories = new Set(registry.categories.map((category) => category.id));
+    const unknown = [
+      ...parsed.data.games.filter((game) => !knownGames.has(game)),
+      ...parsed.data.categories.filter((category) => !knownCategories.has(category)),
+    ];
+    if (unknown.length) {
+      return reply.code(400).send({ error: `Unknown game or category: ${unknown.join(", ")}` });
+    }
+
+    // Categories are expanded here so the event query only ever filters on
+    // `game` and never joins the taxonomy tables.
+    const selectedGames = [...new Set([
+      ...parsed.data.games,
+      ...registry.games
+        .filter((game) => parsed.data.categories.includes(game.category))
+        .map((game) => game.id),
+    ])];
+    // A filter that resolves to nothing means no results, not every result.
+    if ((parsed.data.games.length || parsed.data.categories.length) && !selectedGames.length) {
+      reply.header("Cache-Control", publicCache(60));
+      return { events: [], count: 0, nextCursor: null };
+    }
+
+    const { categories: _expanded, ...lookup } = parsed.data;
+    const page = await listEvents({ ...lookup, games: selectedGames });
     // Collectors write hourly at most, and a query with no explicit `from` is
     // relative to now, so a short window keeps results current while still
     // absorbing the repeated requests a map pan produces.

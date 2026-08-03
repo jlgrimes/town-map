@@ -52,6 +52,7 @@ These endpoints are public interfaces used by official event locators, but they 
 
 ## Normalization rules
 
+- A collector may only write a `game` and `source` that exist in the `games` and `sources` tables; both are enforced by foreign key. Registering a new event type is a data change, so a collector for it must be accompanied by its taxonomy rows.
 - All timestamps are stored as UTC `timestamptz`; the source timezone is retained separately when available.
 - Events are idempotent on `(source, source_event_id)`.
 - Venues are idempotent on `(source, source_venue_id)`.
