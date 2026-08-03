@@ -10,9 +10,14 @@ import {
   listEvents,
   saveUserPreferences,
 } from "@town-map/db";
-import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    // Session tokens and cookies must never reach the log sink.
+    redact: ["req.headers.authorization", "req.headers.cookie", "req.headers['set-cookie']"],
+  },
+});
 const configuredOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim())
@@ -160,13 +165,21 @@ app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
   if (!parsed.success) {
     return reply.code(400).send({ error: "Invalid preferences", details: parsed.error.flatten() });
   }
-  await clerkClient.users.updateUserMetadata(userId, {
-    publicMetadata: {
-      selectedGames: parsed.data.selectedGames,
-      onboardingCompleted: true,
-    },
-  });
-  return saveUserPreferences(userId, parsed.data.homeAddress, parsed.data.selectedGames);
+  // PostgreSQL is the source of truth, so it is written first. Mirroring to Clerk
+  // afterwards can fail without leaving onboarding marked complete against no
+  // stored preferences; the next save reconciles it.
+  const preferences = await saveUserPreferences(userId, parsed.data.homeAddress, parsed.data.selectedGames);
+  try {
+    await clerkClient.users.updateUserMetadata(userId, {
+      publicMetadata: {
+        selectedGames: parsed.data.selectedGames,
+        onboardingCompleted: true,
+      },
+    });
+  } catch (error) {
+    request.log.error({ error, userId }, "Stored preferences but failed to mirror them to Clerk metadata");
+  }
+  return preferences;
 });
 
 app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {
@@ -189,6 +202,38 @@ app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async
 });
 
 app.addHook("onClose", async () => closePool());
+
+app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
+  const status = error.statusCode ?? 500;
+  if (status >= 500) {
+    // The single place an error-tracking client would be notified from.
+    request.log.error({ err: error, requestId: request.id }, "Unhandled request error");
+    return reply.code(status).send({ error: "Something went wrong.", requestId: request.id });
+  }
+  return reply.code(status).send({ error: error.message });
+});
+
+// Railway sends SIGTERM on deploy. Without this the process dies immediately and
+// in-flight requests are dropped; `close()` drains them and runs the onClose hook.
+// Registered before listening so a signal during a slow start is still handled.
+const shutdownTimeoutMs = Number(process.env.SHUTDOWN_TIMEOUT_MS ?? 15_000);
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, async () => {
+    app.log.info({ signal }, "Draining connections before shutdown");
+    const forceExit = setTimeout(() => {
+      app.log.error({ signal }, "Shutdown timed out with requests still in flight");
+      process.exit(1);
+    }, shutdownTimeoutMs);
+    forceExit.unref();
+    try {
+      await app.close();
+      process.exit(0);
+    } catch (error) {
+      app.log.error({ err: error }, "Shutdown failed");
+      process.exit(1);
+    }
+  });
+}
 
 const port = Number(process.env.PORT ?? 3001);
 await app.listen({ host: "0.0.0.0", port });

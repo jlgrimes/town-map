@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: town_map_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/town_map_ci
+      # Integration tests skip themselves when this is unset, so it must be
+      # present for the suite to mean anything.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/town_map_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm check
+
+      - name: Build
+        run: pnpm build
+
+      - name: Apply migrations to an empty database
+        run: pnpm db:migrate
+
+      - name: Verify migrations are idempotent
+        run: |
+          output=$(pnpm db:migrate)
+          echo "$output"
+          if ! grep -q "Database is up to date" <<<"$output"; then
+            echo "::error::Re-running migrations was not a no-op; the ledger is not recording every file."
+            exit 1
+          fi
+
+      - name: Test
+        run: pnpm test
+
+      - name: Confirm integration tests were not skipped
+        run: |
+          output=$(pnpm --filter @town-map/db test 2>&1)
+          echo "$output"
+          if grep -qi "skipped" <<<"$output"; then
+            echo "::error::Database integration tests skipped despite TEST_DATABASE_URL being set."
+            exit 1
+          fi
