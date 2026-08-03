@@ -94,7 +94,7 @@ integration("global-scale event lookup", () => {
       capturedValues,
     );
     const plan = JSON.stringify(explanation.rows[0]["QUERY PLAN"]);
-    expect(plan).toMatch(/events_(game_)?geo_idx/);
+    expect(plan).toMatch(/events_(game_)?geo_live_idx/);
     // The venue table is read only for the rows that survive the page limit.
     expect(plan).not.toContain("Seq Scan");
   }, 10_000);

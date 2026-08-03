@@ -274,7 +274,8 @@ export async function listGameRegistry(database: Queryable = getPool()): Promise
 export async function refreshSourceEventCount(source: EventSource, database: Queryable = getPool()) {
   await database.query(
     `INSERT INTO source_event_counts (source, upcoming_events, computed_at)
-     SELECT $1, count(*), now() FROM events WHERE source = $1 AND starts_at >= now()
+     SELECT $1, count(*), now() FROM events
+     WHERE source = $1 AND starts_at >= now() AND withdrawn_at IS NULL
      ON CONFLICT (source) DO UPDATE SET
        upcoming_events = EXCLUDED.upcoming_events,
        computed_at = EXCLUDED.computed_at`,
@@ -408,6 +409,11 @@ const EVENT_MUTABLE_COLUMNS = [
   "game", "venue_id", "title", "description", "starts_at", "ends_at", "timezone",
   "status", "format", "event_type", "source_url", "registration_url", "price_amount",
   "price_currency", "capacity", "is_online", "latitude", "longitude", "raw",
+  // Included so that seeing a withdrawn event again counts as a change and
+  // therefore un-withdraws it. `collection_region_id` is deliberately absent:
+  // where two regions overlap, comparing it would make every shared event look
+  // changed on every run and reintroduce the write churn this guard removes.
+  "withdrawn_at",
 ] as const;
 
 const VENUE_MUTABLE_COLUMNS = [
@@ -484,6 +490,7 @@ async function upsertEventBatch(
   source: EventSource,
   batch: NormalizedEvent[],
   venueIds: Map<string, string>,
+  collectionRegionId: string | null,
 ) {
   const payload = batch.map((event) => ({
     source_event_id: event.sourceEventId,
@@ -513,13 +520,15 @@ async function upsertEventBatch(
     `INSERT INTO events (
        source, source_event_id, game, venue_id, title, description, starts_at, ends_at,
        timezone, status, format, event_type, source_url, registration_url, price_amount,
-       price_currency, capacity, is_online, latitude, longitude, raw
+       price_currency, capacity, is_online, latitude, longitude, raw,
+       collection_region_id, withdrawn_at
      )
      SELECT $1, entry.source_event_id, entry.game, entry.venue_id, entry.title, entry.description,
        entry.starts_at, entry.ends_at, entry.timezone, entry.status, entry.format, entry.event_type,
        entry.source_url, entry.registration_url, entry.price_amount, entry.price_currency,
        entry.capacity, entry.is_online, entry.latitude, entry.longitude,
-       COALESCE(entry.raw, '{}'::jsonb)
+       COALESCE(entry.raw, '{}'::jsonb),
+       $3::uuid, NULL::timestamptz
      FROM jsonb_to_recordset($2::jsonb) AS entry(
        source_event_id text, game text, venue_id uuid, title text, description text,
        starts_at timestamptz, ends_at timestamptz, timezone text, status text, format text,
@@ -528,10 +537,51 @@ async function upsertEventBatch(
        longitude double precision, raw jsonb
      )
      ON CONFLICT (source, source_event_id) DO UPDATE SET
-       ${assignExcluded(EVENT_MUTABLE_COLUMNS)}, last_seen_at = now(), updated_at = now()
+       ${assignExcluded(EVENT_MUTABLE_COLUMNS)},
+       -- Kept when a collector writes without a region, so a region-less run
+       -- cannot orphan an event from the region responsible for withdrawing it.
+       collection_region_id = COALESCE(EXCLUDED.collection_region_id, events.collection_region_id),
+       last_seen_at = now(), updated_at = now()
      WHERE ${changedPredicate("events", EVENT_MUTABLE_COLUMNS)}`,
-    [source, JSON.stringify(payload)],
+    [source, JSON.stringify(payload), collectionRegionId],
   );
+}
+
+/**
+ * Withdraws the upcoming events a region owns but did not return.
+ *
+ * Only ever called after a region completes successfully, so a failed upstream
+ * fetch cannot empty a city. Scoped to one region and to future events: past
+ * events legitimately drop out of upstream feeds, and an event another region
+ * owns is that region's to withdraw.
+ *
+ * Known limitation: where two regions overlap, an event that leaves one
+ * region's scope while remaining in another's is withdrawn by its owner and
+ * stays hidden until the other region next writes it. Per-region sighting
+ * records would close that gap and are worth adding alongside a metropolitan
+ * search-centre catalogue.
+ */
+export async function withdrawMissingEvents(
+  collectionRegionId: string,
+  seenSourceEventIds: string[],
+  database: Queryable = getPool(),
+) {
+  // An empty result is the shape a silently broken upstream takes, and acting on
+  // it would withdraw an entire region at once. Refusing here means a region
+  // that has genuinely emptied keeps stale events until it returns something,
+  // which is the recoverable direction of the two.
+  if (!seenSourceEventIds.length) return 0;
+  const result = await database.query(
+    `WITH seen AS (SELECT unnest($2::text[]) AS source_event_id)
+     UPDATE events e
+     SET withdrawn_at = now(), updated_at = now()
+     WHERE e.collection_region_id = $1
+       AND e.starts_at >= now()
+       AND e.withdrawn_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM seen WHERE seen.source_event_id = e.source_event_id)`,
+    [collectionRegionId, seenSourceEventIds],
+  );
+  return result.rowCount ?? 0;
 }
 
 /**
@@ -545,8 +595,13 @@ async function upsertEventBatch(
  * collector observed it; detecting events withdrawn upstream needs a
  * region-scoped set comparison rather than this column.
  */
-export async function upsertEvents(source: EventSource, events: NormalizedEvent[], batchSize = 500) {
+export async function upsertEvents(
+  source: EventSource,
+  events: NormalizedEvent[],
+  options: { collectionRegionId?: string | null; batchSize?: number } = {},
+) {
   if (!events.length) return 0;
+  const { collectionRegionId = null, batchSize = 500 } = options;
   // `ON CONFLICT` cannot touch the same row twice in one statement, so collapse
   // duplicate ids first. Later entries win, matching the previous row-by-row order.
   const deduplicated = [...new Map(events.map((event) => [event.sourceEventId, event])).values()];
@@ -555,7 +610,13 @@ export async function upsertEvents(source: EventSource, events: NormalizedEvent[
     await client.query("BEGIN");
     const venueIds = await upsertVenues(client, source, deduplicated);
     for (let offset = 0; offset < deduplicated.length; offset += batchSize) {
-      await upsertEventBatch(client, source, deduplicated.slice(offset, offset + batchSize), venueIds);
+      await upsertEventBatch(
+        client,
+        source,
+        deduplicated.slice(offset, offset + batchSize),
+        venueIds,
+        collectionRegionId,
+      );
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -735,7 +796,9 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
     values.push(value);
     return `$${values.length}`;
   };
-  const conditions = [`e.starts_at >= ${addValue(snapshotFrom)}`];
+  // Withdrawn events are retained for audit but never served, and the partial
+  // indexes backing this query carry the same predicate.
+  const conditions = ["e.withdrawn_at IS NULL", `e.starts_at >= ${addValue(snapshotFrom)}`];
   if (query.to) {
     conditions.push(`e.starts_at <= ${addValue(query.to)}`);
   }

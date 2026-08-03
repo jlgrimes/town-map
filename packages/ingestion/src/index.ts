@@ -8,6 +8,7 @@ import {
   refreshSourceEventCount,
   registerCollectionRegions,
   upsertEvents,
+  withdrawMissingEvents,
   type CollectionRegionDefinition,
 } from "@town-map/db";
 import { randomUUID } from "node:crypto";
@@ -127,6 +128,7 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
   let regionsProcessed = 0;
   let eventsSeen = 0;
   let eventsWritten = 0;
+  let eventsWithdrawn = 0;
 
   try {
     await registerCollectionRegions(source, effectiveDefinitions);
@@ -143,11 +145,18 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       let syncId: string | null = null;
       let regionEventsSeen = 0;
       let regionEventsWritten = 0;
+      let regionEventsWithdrawn = 0;
       try {
         syncId = await beginSync(source, claimed);
         const events = validateEvents(await collect(definition));
         regionEventsSeen = events.length;
-        regionEventsWritten = await upsertEvents(source, events);
+        regionEventsWritten = await upsertEvents(source, events, { collectionRegionId: claimed.id });
+        // Only after the region's own collection succeeded, so an upstream
+        // failure can never withdraw the events it failed to fetch.
+        regionEventsWithdrawn = await withdrawMissingEvents(
+          claimed.id,
+          events.map((event) => event.sourceEventId),
+        );
         await finishSync(syncId, {
           status: "succeeded",
           eventsSeen: regionEventsSeen,
@@ -174,6 +183,7 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       regionsProcessed += 1;
       eventsSeen += regionEventsSeen;
       eventsWritten += regionEventsWritten;
+      eventsWithdrawn += regionEventsWithdrawn;
     }
 
     // Once per run rather than once per region: the snapshot covers the whole
@@ -190,5 +200,5 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
   }
 
   if (failures.length) throw new AggregateError(failures, `${source} failed in ${failures.length} collection region(s)`);
-  return { regionsProcessed, eventsSeen, eventsWritten, dryRun: false };
+  return { regionsProcessed, eventsSeen, eventsWritten, eventsWithdrawn, dryRun: false };
 }
