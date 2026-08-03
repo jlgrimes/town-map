@@ -240,6 +240,23 @@ function coverageStatus(region: CoverageRegionRow, now: Date): CoverageRegionSta
   return staleAt < now.getTime() ? "stale" : "fresh";
 }
 
+/**
+ * Recomputes the upcoming-event snapshot for one source.
+ *
+ * Runs after a collection run rather than on request, so the scan this replaces
+ * never sits in front of a user. Served by events_source_starts_at_idx.
+ */
+export async function refreshSourceEventCount(source: EventSource, database: Queryable = getPool()) {
+  await database.query(
+    `INSERT INTO source_event_counts (source, upcoming_events, computed_at)
+     SELECT $1, count(*), now() FROM events WHERE source = $1 AND starts_at >= now()
+     ON CONFLICT (source) DO UPDATE SET
+       upcoming_events = EXCLUDED.upcoming_events,
+       computed_at = EXCLUDED.computed_at`,
+    [source],
+  );
+}
+
 export async function listCoverage(database: Queryable = getPool()): Promise<CoverageResponse> {
   const generatedAt = new Date();
   const [regionResult, eventCountResult] = await Promise.all([
@@ -251,11 +268,9 @@ export async function listCoverage(database: Queryable = getPool()): Promise<Cov
        FROM collection_regions
        ORDER BY source, country_code NULLS LAST, label, region_key`,
     ),
-    database.query<{ source: EventSource; upcomingEvents: string }>(
-      `SELECT source, count(*)::text AS "upcomingEvents"
-       FROM events
-       WHERE starts_at >= now()
-       GROUP BY source`,
+    database.query<{ source: EventSource; upcomingEvents: number; computedAt: Date }>(
+      `SELECT source, upcoming_events AS "upcomingEvents", computed_at AS "computedAt"
+       FROM source_event_counts`,
     ),
   ]);
   const regions: CoverageRegion[] = regionResult.rows.map((region) => ({
@@ -273,10 +288,10 @@ export async function listCoverage(database: Queryable = getPool()): Promise<Cov
     lastSuccessAt: region.lastSuccessAt?.toISOString() ?? null,
     lastFailureAt: region.lastFailureAt?.toISOString() ?? null,
   }));
-  const upcomingEvents = new Map(eventCountResult.rows.map((row) => [row.source, Number(row.upcomingEvents)]));
+  const eventCounts = new Map(eventCountResult.rows.map((row) => [row.source, row]));
   const sources = new Map<EventSource, CoverageSource>();
 
-  for (const source of new Set([...regions.map((region) => region.source), ...upcomingEvents.keys()])) {
+  for (const source of new Set([...regions.map((region) => region.source), ...eventCounts.keys()])) {
     const sourceRegions = regions.filter((region) => region.source === source);
     const latestSuccessAt = sourceRegions
       .map((region) => region.lastSuccessAt)
@@ -292,7 +307,8 @@ export async function listCoverage(database: Queryable = getPool()): Promise<Cov
       staleRegions: sourceRegions.filter((region) => region.status === "stale").length,
       failingRegions: sourceRegions.filter((region) => region.status === "failing").length,
       runningRegions: sourceRegions.filter((region) => region.status === "running").length,
-      upcomingEvents: upcomingEvents.get(source) ?? 0,
+      upcomingEvents: Number(eventCounts.get(source)?.upcomingEvents ?? 0),
+      upcomingEventsComputedAt: eventCounts.get(source)?.computedAt?.toISOString() ?? null,
       latestSuccessAt,
     });
   }

@@ -5,6 +5,7 @@ import {
   closePool,
   finishCollectionRegion,
   finishSync,
+  refreshSourceEventCount,
   registerCollectionRegions,
   upsertEvents,
   type CollectionRegionDefinition,
@@ -75,6 +76,7 @@ export async function runCollector(source: EventSource, collect: Collector) {
     } else {
       eventsWritten = await upsertEvents(source, events);
       await finishSync(syncId!, { status: "succeeded", eventsSeen, eventsWritten });
+      await refreshSourceEventCount(source);
     }
     return { eventsSeen, eventsWritten, dryRun };
   } catch (error) {
@@ -172,6 +174,16 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       regionsProcessed += 1;
       eventsSeen += regionEventsSeen;
       eventsWritten += regionEventsWritten;
+    }
+
+    // Once per run rather than once per region: the snapshot covers the whole
+    // source, so recomputing it after each region would repeat the same scan.
+    if (regionsProcessed > failures.length) {
+      try {
+        await refreshSourceEventCount(source);
+      } catch (error) {
+        failures.push(new Error(`refreshing ${source} event count`, { cause: error }));
+      }
     }
   } finally {
     await closePool();

@@ -33,6 +33,7 @@ describe("event API contracts", () => {
         failingRegions: 0,
         runningRegions: 0,
         upcomingEvents: 12,
+        upcomingEventsComputedAt: "2030-01-01T11:00:00.000Z",
         latestSuccessAt: "2030-01-01T11:00:00.000Z",
       }],
       regions: [{

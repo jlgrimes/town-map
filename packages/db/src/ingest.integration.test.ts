@@ -10,6 +10,7 @@ const schema = `town_map_ingest_test_${process.pid}`;
 let client: Client;
 let closePool: typeof import("./index.js").closePool;
 let upsertEvents: typeof import("./index.js").upsertEvents;
+let refreshSourceEventCount: typeof import("./index.js").refreshSourceEventCount;
 
 function event(index: number, overrides: Partial<NormalizedEvent> = {}): NormalizedEvent {
   return {
@@ -67,7 +68,7 @@ integration("collector writes", () => {
     const url = new URL(connectionString!);
     url.searchParams.set("options", `-c search_path=${schema}`);
     process.env.DATABASE_URL = url.toString();
-    ({ closePool, upsertEvents } = await import("./index.js"));
+    ({ closePool, upsertEvents, refreshSourceEventCount } = await import("./index.js"));
   }, 60_000);
 
   afterAll(async () => {
@@ -151,6 +152,48 @@ integration("collector writes", () => {
       `SELECT venue_id AS "venueId", latitude FROM events WHERE source_event_id = 'event-20'`,
     );
     expect(stored.rows[0]).toEqual({ venueId: null, latitude: null });
+  });
+
+  it("snapshots only upcoming events for the requested source", async () => {
+    await upsertEvents("wotc-locator", [
+      event(40, { startsAt: "2030-06-01T18:00:00.000Z" }),
+      event(41, { startsAt: "2020-06-01T18:00:00.000Z" }),
+    ]);
+    await upsertEvents("konami-kcgn", [event(42, { game: "yugioh" })]);
+
+    await refreshSourceEventCount("wotc-locator", client);
+
+    const snapshot = await client.query<{ source: string; upcomingEvents: number; computedAt: Date }>(
+      `SELECT source, upcoming_events AS "upcomingEvents", computed_at AS "computedAt"
+       FROM source_event_counts ORDER BY source`,
+    );
+    // Only the refreshed source is recorded, and the past event is excluded.
+    expect(snapshot.rows).toHaveLength(1);
+    expect(snapshot.rows[0].source).toBe("wotc-locator");
+    expect(snapshot.rows[0].computedAt).toBeInstanceOf(Date);
+
+    const upcoming = await client.query<{ count: string }>(
+      "SELECT count(*)::text FROM events WHERE source = 'wotc-locator' AND starts_at >= now()",
+    );
+    expect(snapshot.rows[0].upcomingEvents).toBe(Number(upcoming.rows[0].count));
+  });
+
+  it("overwrites an existing snapshot rather than duplicating it", async () => {
+    await refreshSourceEventCount("wotc-locator", client);
+    const first = await client.query<{ computedAt: Date }>(
+      `SELECT computed_at AS "computedAt" FROM source_event_counts WHERE source = 'wotc-locator'`,
+    );
+
+    await upsertEvents("wotc-locator", [event(43)]);
+    await refreshSourceEventCount("wotc-locator", client);
+
+    const after = await client.query<{ count: string; upcomingEvents: number; computedAt: Date }>(
+      `SELECT count(*) OVER ()::text AS count, upcoming_events AS "upcomingEvents",
+              computed_at AS "computedAt"
+       FROM source_event_counts WHERE source = 'wotc-locator'`,
+    );
+    expect(after.rows).toHaveLength(1);
+    expect(after.rows[0].computedAt.getTime()).toBeGreaterThanOrEqual(first.rows[0].computedAt.getTime());
   });
 
   it("writes nothing when a batch fails partway", async () => {

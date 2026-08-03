@@ -1,4 +1,5 @@
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import { clerkClient, clerkPlugin, getAuth } from "@clerk/fastify";
 import { EventQuerySchema, GAME_LABELS, GameSchema, UserPreferencesUpdateSchema } from "@town-map/contracts";
 import {
@@ -45,6 +46,31 @@ await app.register(cors, {
   },
 });
 
+// Counted per process, so the effective ceiling is this multiplied by the replica
+// count. Swap in the plugin's Redis store once the API runs more than one
+// instance and the limit needs to be exact.
+await app.register(rateLimit, {
+  global: true,
+  max: Number(process.env.RATE_LIMIT_MAX ?? 300),
+  timeWindow: process.env.RATE_LIMIT_WINDOW ?? "1 minute",
+  // Health checks come from the platform and must never be throttled.
+  allowList: (request) => request.url === "/health",
+});
+
+/** Endpoints doing upstream or scan-heavy work get a tighter ceiling. */
+function rateLimited(max: number) {
+  return { rateLimit: { max, timeWindow: process.env.RATE_LIMIT_WINDOW ?? "1 minute" } };
+}
+
+/**
+ * Cached responses are per-URL and identical for every caller, so a shared cache
+ * is safe. Authenticated routes opt out explicitly instead of relying on this
+ * default not being applied.
+ */
+function publicCache(seconds: number, staleWhileRevalidateSeconds = seconds * 5) {
+  return `public, max-age=${seconds}, stale-while-revalidate=${staleWhileRevalidateSeconds}`;
+}
+
 if (clerkConfigured) {
   await app.register(clerkPlugin, {
     publishableKey: process.env.CLERK_PUBLISHABLE_KEY!,
@@ -66,6 +92,7 @@ function authenticatedUserId(request: FastifyRequest, reply: FastifyReply) {
 }
 
 app.get("/health", async (_request, reply) => {
+  reply.header("Cache-Control", "no-store");
   if (!process.env.DATABASE_URL) {
     return reply.code(503).send({ status: "degraded", database: "not-configured" });
   }
@@ -77,14 +104,19 @@ app.get("/health", async (_request, reply) => {
   }
 });
 
-app.get("/v1/games", async () => ({
-  games: GameSchema.options.map((id) => ({ id, label: GAME_LABELS[id] })),
-}));
+app.get("/v1/games", async (_request, reply) => {
+  // Compiled into the build; only a deploy can change it.
+  reply.header("Cache-Control", publicCache(3_600));
+  return { games: GameSchema.options.map((id) => ({ id, label: GAME_LABELS[id] })) };
+});
 
 app.get("/v1/coverage", async (_request, reply) => {
   if (!process.env.DATABASE_URL) {
+    reply.header("Cache-Control", "no-store");
     return reply.code(503).send({ error: "The event database is not configured." });
   }
+  // Collectors refresh the underlying snapshot hourly at most.
+  reply.header("Cache-Control", publicCache(60));
   return listCoverage();
 });
 
@@ -139,12 +171,19 @@ async function geocodePlace(query: string): Promise<HomeLocation | null> {
   }
 }
 
-app.get<{ Querystring: { q?: string } }>("/v1/geocode", async (request, reply) => {
+// Every request here can reach the upstream geocoder, which is rate limited by
+// its operator and serialised to one request per second inside this process.
+app.get<{ Querystring: { q?: string } }>("/v1/geocode", {
+  config: rateLimited(Number(process.env.RATE_LIMIT_GEOCODE_MAX ?? 20)),
+}, async (request, reply) => {
   const query = request.query.q?.trim();
+  reply.header("Cache-Control", "no-store");
   if (!query || query.length > 500) return reply.code(400).send({ error: "Enter a valid place." });
   try {
     const result = await geocodePlace(query);
     if (!result) return reply.code(404).send({ error: "Place not found." });
+    // Place coordinates are stable; this mirrors the in-process cache lifetime.
+    reply.header("Cache-Control", publicCache(86_400));
     return result;
   } catch (error) {
     request.log.warn({ error }, "Geocoding request failed");
@@ -153,12 +192,15 @@ app.get<{ Querystring: { q?: string } }>("/v1/geocode", async (request, reply) =
 });
 
 app.get("/v1/preferences", async (request, reply) => {
+  // Per-user and authenticated: never store this in a shared or browser cache.
+  reply.header("Cache-Control", "no-store");
   const userId = authenticatedUserId(request, reply);
   if (!userId) return;
   return getUserPreferences(userId);
 });
 
 app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
+  reply.header("Cache-Control", "no-store");
   const userId = authenticatedUserId(request, reply);
   if (!userId) return;
   const parsed = UserPreferencesUpdateSchema.safeParse(request.body);
@@ -185,6 +227,7 @@ app.put<{ Body: unknown }>("/v1/preferences", async (request, reply) => {
 app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {
   const games = request.query.games?.split(",").filter(Boolean) ?? [];
   const parsed = EventQuerySchema.safeParse({ ...request.query, games });
+  reply.header("Cache-Control", "no-store");
   if (!parsed.success) {
     return reply.code(400).send({ error: "Invalid query", details: parsed.error.flatten() });
   }
@@ -192,7 +235,12 @@ app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async
     return reply.code(503).send({ error: "The event database is not configured." });
   }
   try {
-    return await listEvents(parsed.data);
+    const page = await listEvents(parsed.data);
+    // Collectors write hourly at most, and a query with no explicit `from` is
+    // relative to now, so a short window keeps results current while still
+    // absorbing the repeated requests a map pan produces.
+    reply.header("Cache-Control", publicCache(60));
+    return page;
   } catch (error) {
     if (error instanceof InvalidEventCursorError) {
       return reply.code(400).send({ error: error.message });
@@ -205,6 +253,9 @@ app.addHook("onClose", async () => closePool());
 
 app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
   const status = error.statusCode ?? 500;
+  // Errors short-circuit the handlers that would have set this, and a cached
+  // rate-limit or failure response would outlive the condition that caused it.
+  reply.header("Cache-Control", "no-store");
   if (status >= 500) {
     // The single place an error-tracking client would be notified from.
     request.log.error({ err: error, requestId: request.id }, "Unhandled request error");

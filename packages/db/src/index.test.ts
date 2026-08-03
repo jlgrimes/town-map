@@ -162,9 +162,17 @@ describe("listCoverage", () => {
           lastFailureAt: null,
         },
       ] })
-      .mockResolvedValueOnce({ rows: [{ source: "wotc-locator", upcomingEvents: "42" }] });
+      .mockResolvedValueOnce({ rows: [{
+        source: "wotc-locator",
+        upcomingEvents: 42,
+        computedAt: new Date("2026-08-03T10:00:00.000Z"),
+      }] });
 
     const result = await listCoverage({ query } as never);
+
+    // Read from the snapshot table, never counted per request.
+    expect(query.mock.calls[1][0]).toContain("FROM source_event_counts");
+    expect(query.mock.calls.every(([sql]) => !/count\(\*\)[\s\S]*FROM events/.test(sql))).toBe(true);
 
     expect(result.regions.map((region) => [region.key, region.status, region.due])).toEqual([
       ["fresh", "fresh", false],
@@ -178,8 +186,35 @@ describe("listCoverage", () => {
       freshRegions: 1,
       failingRegions: 1,
       upcomingEvents: 42,
+      upcomingEventsComputedAt: "2026-08-03T10:00:00.000Z",
     })]);
     expect(JSON.stringify(result)).not.toContain("config");
+  });
+
+  it("distinguishes a source with no snapshot yet from one counted at zero", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [{
+        source: "konami-kcgn",
+        regionKey: "US:IL",
+        label: "Illinois",
+        countryCode: "US",
+        enabled: true,
+        cadenceMinutes: 360,
+        nextRunAt: new Date(),
+        leaseExpiresAt: null,
+        lastStartedAt: null,
+        lastSuccessAt: null,
+        lastFailureAt: null,
+      }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await listCoverage({ query } as never);
+
+    expect(result.sources).toEqual([expect.objectContaining({
+      source: "konami-kcgn",
+      upcomingEvents: 0,
+      upcomingEventsComputedAt: null,
+    })]);
   });
 });
 

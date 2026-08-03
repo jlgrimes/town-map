@@ -141,6 +141,10 @@ export const CoverageSourceSchema = z.object({
   failingRegions: z.number().int().nonnegative(),
   runningRegions: z.number().int().nonnegative(),
   upcomingEvents: z.number().int().nonnegative(),
+  // When `upcomingEvents` was last recomputed. Null before a source has
+  // completed its first collection run. Exposed so consumers can tell a genuine
+  // zero from a snapshot that has not been refreshed yet.
+  upcomingEventsComputedAt: z.string().datetime().nullable(),
   latestSuccessAt: z.string().datetime().nullable(),
 });
 export type CoverageSource = z.infer<typeof CoverageSourceSchema>;

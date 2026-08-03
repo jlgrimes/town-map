@@ -30,7 +30,9 @@ Prerequisites: Node.js 22+, pnpm 9+, and PostgreSQL 15+.
 
 The app runs at `http://localhost:5173`; the API runs at `http://localhost:3001`. In development, the app displays clearly labeled preview events when the API or database is unavailable.
 
-The read API exposes `GET /v1/events`, `GET /v1/games`, `GET /v1/coverage`, and `GET /v1/geocode`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details.
+The read API exposes `GET /v1/events`, `GET /v1/games`, `GET /v1/coverage`, and `GET /v1/geocode`. Coverage reports region freshness and upcoming event totals without exposing collector configuration or upstream error details. Its event totals are a snapshot recomputed by each collector after a successful run rather than counted per request; `upcomingEventsComputedAt` reports when each was last refreshed.
+
+Every route is rate limited per process and sends an explicit `Cache-Control`. Public, identical-for-everyone responses are cacheable by a shared cache; authenticated preference routes and every error response are `no-store`.
 
 Signed-in users complete onboarding with a home area and at least one game through `GET /v1/preferences` and `PUT /v1/preferences`. The routes require a Clerk session token; the browser sends it as a bearer token. PostgreSQL is the source of truth for these preferences and onboarding state, while selected games and the completion flag are also mirrored to Clerk public metadata. The saved area and games become the user's default event query. Resolving the saved area to map coordinates happens separately and never blocks saving the preference.
 
