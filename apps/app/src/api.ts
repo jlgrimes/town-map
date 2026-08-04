@@ -76,6 +76,18 @@ export async function fetchEvents(options: EventFetchOptions) {
   return { events, truncated: true };
 }
 
+/**
+ * Fetches all upcoming events for a specific shop directly from the backend API,
+ * without spatial distance caps or game filters.
+ */
+export async function fetchEventsForShop(shopQuery: string, signal?: AbortSignal) {
+  return fetchEvents({
+    games: [],
+    query: shopQuery,
+    signal,
+  });
+}
+
 export async function fetchGameRegistry(signal?: AbortSignal) {
   const response = await fetch(`${API_URL}/v1/games`, { signal });
   if (!response.ok) throw new Error(`Game registry returned ${response.status}`);

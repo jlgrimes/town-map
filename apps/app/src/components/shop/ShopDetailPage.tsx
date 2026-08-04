@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { EventListItem } from "@town-map/contracts";
 import {
@@ -12,6 +12,7 @@ import {
   Sparkles,
   Check,
   Search,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { ExpandableEventCardModal } from "@/components/ui/expandable-card";
 import { DotBackground } from "@/components/ui/dot-background";
 import { EventRow, eventMetadata, formatPrice } from "@/components/ui/event-row";
+import { fetchEventsForShop } from "../../api";
 import { GameIcon } from "../../GameIcon";
 import { ShopStaticMap } from "./ShopStaticMap";
 import { type GameCatalog } from "../../games";
@@ -34,7 +36,7 @@ interface ShopDetailPageProps {
 }
 
 export function ShopDetailPage({
-  events,
+  events: initialEvents,
   savedEventIds,
   onToggleSave,
   catalog,
@@ -46,18 +48,34 @@ export function ShopDetailPage({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
-  // 1. Find all events matching this shop slug
-  const shopEvents = useMemo(() => {
+  // Direct backend fetched events state
+  const [backendEvents, setBackendEvents] = useState<EventListItem[] | null>(null);
+  const [isLoadingBackend, setIsLoadingBackend] = useState(true);
+
+  // Derive initial matching events from prop
+  const localShopEvents = useMemo(() => {
     if (!shopSlug) return [];
-    return events.filter((evt) => {
+    return initialEvents.filter((evt) => {
       if (!evt.venue || !evt.venue.name) return false;
       return matchesShopSlug(evt.venue.name, evt.venue.city, shopSlug);
     });
-  }, [events, shopSlug]);
+  }, [initialEvents, shopSlug]);
 
-  // 2. Extract venue/shop details from the first matching event (or fallback)
+  // Combined shop events: backend results take priority once loaded, fallback to local
+  const shopEvents = useMemo(() => {
+    if (backendEvents && backendEvents.length > 0) {
+      // Filter backend results to ensure they belong to this shop
+      return backendEvents.filter((evt) => {
+        if (!evt.venue || !evt.venue.name) return false;
+        return matchesShopSlug(evt.venue.name, evt.venue.city, shopSlug || "");
+      });
+    }
+    return localShopEvents;
+  }, [backendEvents, localShopEvents, shopSlug]);
+
+  // Extract venue/shop details from available events
   const shopInfo = useMemo<ShopInfo | null>(() => {
-    const firstEvent = shopEvents[0];
+    const firstEvent = shopEvents[0] ?? localShopEvents[0];
     if (firstEvent && firstEvent.venue && firstEvent.venue.name) {
       const v = firstEvent.venue;
       return {
@@ -74,7 +92,7 @@ export function ShopDetailPage({
       };
     }
 
-    for (const evt of events) {
+    for (const evt of initialEvents) {
       if (evt.venue?.name && matchesShopSlug(evt.venue.name, evt.venue.city, shopSlug || "")) {
         const v = evt.venue;
         return {
@@ -93,7 +111,31 @@ export function ShopDetailPage({
     }
 
     return null;
-  }, [shopEvents, events, shopSlug]);
+  }, [shopEvents, localShopEvents, initialEvents, shopSlug]);
+
+  // Fetch full upcoming shop events timeline directly from backend API
+  useEffect(() => {
+    if (!shopSlug) return;
+    const controller = new AbortController();
+    setIsLoadingBackend(true);
+
+    const queryTerm = shopInfo?.name ?? shopSlug.replace(/-/g, " ");
+
+    fetchEventsForShop(queryTerm, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted) {
+          setBackendEvents(res.events);
+          setIsLoadingBackend(false);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setIsLoadingBackend(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [shopSlug, shopInfo?.name]);
 
   // Filter shop events by text search query
   const filteredEvents = useMemo(() => {
@@ -286,7 +328,12 @@ export function ShopDetailPage({
               )}
             </div>
 
-            {filteredEvents.length === 0 ? (
+            {isLoadingBackend && shopEvents.length === 0 ? (
+              <div className="rounded-xl border bg-card p-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+                <span>Loading shop events from database...</span>
+              </div>
+            ) : filteredEvents.length === 0 ? (
               <div className="rounded-xl border bg-card p-8">
                 <Empty>
                   <EmptyHeader>
