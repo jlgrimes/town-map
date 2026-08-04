@@ -81,6 +81,7 @@ import {
 import { demoEvents } from "./demo-events";
 import { GameIcon } from "./GameIcon";
 import { useGameCatalog, type GameCatalog } from "./games";
+import { ExpandableEventCardModal } from "@/components/ui/expandable-card";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -475,19 +476,12 @@ function EventRow({
     formatPrice(event),
     event.capacity !== null ? `Capacity ${event.capacity}` : null,
   ].filter((detail): detail is string => detail !== null);
-  const mapsQuery = [
-    event.venue?.name,
-    event.venue?.address,
-    event.venue?.city,
-    event.venue?.region,
-    event.venue?.postalCode,
-  ].filter(Boolean).join(", ");
   const recurrence = recurrenceLabel(event.series);
 
   return (
     <li
       id={`event-${event.id}`}
-      className={`scroll-mt-4 px-1 py-4 transition-colors sm:px-2 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
+      className={`scroll-mt-4 cursor-pointer px-1 py-4 transition-colors sm:px-2 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
       onMouseEnter={() => onPreview(event.id)}
       onMouseLeave={() => onPreview(null)}
       onFocusCapture={() => onPreview(event.id)}
@@ -504,34 +498,12 @@ function EventRow({
         <div className="min-w-0">
           <div className="flex items-start gap-2">
             <GameIcon game={event.game} className="size-5 shrink-0 object-contain" />
-            <h3 className="min-w-0 text-base leading-snug font-semibold tracking-tight">
-              {event.sourceUrl ? (
-                <a
-                  href={event.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                  aria-label={`View details for ${event.title}`}
-                >
-                  {event.title}
-                </a>
-              ) : event.title}
+            <h3 className="min-w-0 text-base leading-snug font-semibold tracking-tight text-foreground">
+              {event.title}
             </h3>
           </div>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            {mapsQuery ? (
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-sm text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                aria-label={`Open ${location || "event location"} in Google Maps`}
-              >
-                {location || "View location"}
-              </a>
-            ) : (
-              <span className="text-foreground">Venue to be announced</span>
-            )}
+            <span className="text-foreground">{location || "Venue to be announced"}</span>
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
           </p>
           {details.length > 0 && (
@@ -620,12 +592,18 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => initialTab(auth.enabled));
   const [savedEvents, setSavedEvents] = useState<EventListItem[]>([]);
   const [savedStatus, setSavedStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [savedReloadKey, setSavedReloadKey] = useState(0);
+
+  const expandedEvent = useMemo(
+    () => events.find((candidate) => candidate.id === expandedEventId) ?? savedEvents.find((candidate) => candidate.id === expandedEventId) ?? null,
+    [expandedEventId, events, savedEvents],
+  );
   // Saving is an account feature, so there is nothing to write to until Clerk has
   // both loaded and reported somebody signed in.
   const canSave = auth.enabled && auth.loaded && auth.signedIn;
@@ -918,11 +896,13 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
 
   const handleMapSelect = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
+    setExpandedEventId(eventId);
     setHighlightedEventId(null);
   }, []);
 
   const handleListSelect = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
+    setExpandedEventId(eventId);
   }, []);
 
   const handleClearSelectedEvent = useCallback(() => {
@@ -1238,7 +1218,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                                   saved
                                   canSave={canSave}
                                   onPreview={() => undefined}
-                                  onSelect={() => undefined}
+                                  onSelect={handleListSelect}
                                   onToggleSave={toggleSaved}
                                 />
                               ))}
@@ -1444,6 +1424,16 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
           </SidebarInset>
         </div>
       </SidebarProvider>
+      <ExpandableEventCardModal
+        event={expandedEvent}
+        onClose={() => setExpandedEventId(null)}
+        saved={expandedEvent ? savedIds.has(expandedEvent.id) : false}
+        canSave={canSave}
+        onToggleSave={toggleSaved}
+        eventMetadata={eventMetadata}
+        formatPrice={formatPrice}
+        recurrenceLabel={recurrenceLabel}
+      />
     </TooltipProvider>
   );
 }

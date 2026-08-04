@@ -113,7 +113,17 @@ function groupEventsByStore(events: EventListItem[], gameOrder: Game[]) {
   });
 }
 
-function StoreSchedule({ store, onClose, catalog }: { store: StoreGroup; onClose: () => void; catalog: GameCatalog }) {
+function StoreSchedule({
+  store,
+  onClose,
+  catalog,
+  onSelect,
+}: {
+  store: StoreGroup;
+  onClose: () => void;
+  catalog: GameCatalog;
+  onSelect: (eventId: string) => void;
+}) {
   return (
     <aside
       aria-label={`${store.name} events`}
@@ -152,7 +162,11 @@ function StoreSchedule({ store, onClose, catalog }: { store: StoreGroup; onClose
               </div>
               <ol className="divide-y">
                 {gameEvents.map((event) => (
-                  <li key={event.id} className="py-2 first:pt-0">
+                  <li
+                    key={event.id}
+                    className="py-2 first:pt-0 cursor-pointer hover:bg-muted/40 rounded px-1 transition-colors"
+                    onClick={() => onSelect(event.id)}
+                  >
                     <p className="text-xs tabular-nums text-muted-foreground">
                       {new Intl.DateTimeFormat(undefined, {
                         weekday: "short",
@@ -162,18 +176,7 @@ function StoreSchedule({ store, onClose, catalog }: { store: StoreGroup; onClose
                         minute: "2-digit",
                       }).format(new Date(event.startsAt))}
                     </p>
-                    {event.sourceUrl ? (
-                      <a
-                        href={event.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-0.5 block text-sm font-medium leading-snug underline-offset-4 hover:underline"
-                      >
-                        {event.title}
-                      </a>
-                    ) : (
-                      <p className="mt-0.5 text-sm font-medium leading-snug">{event.title}</p>
-                    )}
+                    <p className="mt-0.5 text-sm font-medium leading-snug">{event.title}</p>
                   </li>
                 ))}
               </ol>
@@ -444,7 +447,7 @@ export function EventMap({
       </Map>
       {selectedStore && (
         <div className="absolute right-2 bottom-12 left-2 z-10 sm:right-3 sm:left-auto sm:w-80">
-          <StoreSchedule store={selectedStore} onClose={onDeselect} catalog={catalog} />
+          <StoreSchedule store={selectedStore} onClose={onDeselect} catalog={catalog} onSelect={onSelect} />
         </div>
       )}
     </div>

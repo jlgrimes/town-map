@@ -24,6 +24,7 @@
     "@town-map/contracts": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.43.0",
     "lucide-react": "1.28.0",
     "maplibre-gl": "^6.1.0",
     "radix-ui": "^1.6.7",
