@@ -482,13 +482,31 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [savedStatus, setSavedStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [savedReloadKey, setSavedReloadKey] = useState(0);
-  // Saving is an account feature, so there is nothing to write to until Clerk has
-  // both loaded and reported somebody signed in.
-  const canSave = auth.enabled && auth.loaded && auth.signedIn;
+  // Saving is an account feature when auth is enabled; in demo/dev mode without
+  // auth, local saving allows testing and offline usage.
+  const isDemo = import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true";
+  const canSave = auth.enabled ? (auth.loaded && auth.signedIn) : isDemo;
   const savedIds = useMemo(() => new Set(savedEvents.map((event) => event.id)), [savedEvents]);
 
   useEffect(() => {
-    if (!auth.enabled || !auth.loaded) return;
+    if (!auth.enabled) {
+      if (isDemo) {
+        try {
+          const cached = localStorage.getItem("town_map_saved_events");
+          setSavedEvents(cached ? (JSON.parse(cached) as EventListItem[]) : []);
+          setSavedStatus("ready");
+        } catch {
+          setSavedEvents([]);
+          setSavedStatus("ready");
+        }
+      } else {
+        setSavedEvents([]);
+        setSavedStatus("idle");
+      }
+      setSavedNotice(null);
+      return;
+    }
+    if (!auth.loaded) return;
     if (!auth.signedIn) {
       // Signing out has to clear the list rather than leave the previous
       // account's saves on screen for the next person to use this browser.
@@ -503,13 +521,24 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       .then((saved) => {
         setSavedEvents(saved.events);
         setSavedStatus("ready");
+        if (isDemo) {
+          try { localStorage.setItem("town_map_saved_events", JSON.stringify(saved.events)); } catch {}
+        }
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        if (isDemo) {
+          try {
+            const cached = localStorage.getItem("town_map_saved_events");
+            setSavedEvents(cached ? (JSON.parse(cached) as EventListItem[]) : []);
+            setSavedStatus("ready");
+            return;
+          } catch {}
+        }
         setSavedStatus("error");
       });
     return () => controller.abort();
-  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, savedReloadKey]);
+  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, isDemo, savedReloadKey]);
 
   /**
    * Applied locally before the request is sent. The icon is the only feedback a
@@ -523,21 +552,29 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     const event = previous.find((candidate) => candidate.id === eventId)
       ?? events.find((candidate) => candidate.id === eventId);
     if (!event) return;
-    setSavedNotice(null);
-    setSavedEvents(wasSaved
+    const nextSaved = wasSaved
       ? previous.filter((candidate) => candidate.id !== eventId)
-      : sortEvents([...previous, event]));
+      : sortEvents([...previous, event]);
+    setSavedNotice(null);
+    setSavedEvents(nextSaved);
     try {
       if (wasSaved) await unsaveEvent(eventId, auth.getToken);
       else await saveEvent(eventId, auth.getToken);
+      if (isDemo) {
+        try { localStorage.setItem("town_map_saved_events", JSON.stringify(nextSaved)); } catch {}
+      }
     } catch (error) {
+      if (isDemo) {
+        try { localStorage.setItem("town_map_saved_events", JSON.stringify(nextSaved)); } catch {}
+        return;
+      }
       setSavedEvents(previous);
       setSavedNotice(wasSaved
         ? "We couldn't remove that event. Please try again."
         : "We couldn't save that event. Please try again.");
       console.error("Updating saved events failed", error);
     }
-  }, [auth.getToken, canSave, events, savedEvents]);
+  }, [auth.getToken, canSave, events, isDemo, savedEvents]);
 
   useEffect(() => {
     if (!auth.enabled || !auth.loaded) return;
