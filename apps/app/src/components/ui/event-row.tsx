@@ -1,8 +1,6 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { recurrenceLabel, type EventListItem } from "@town-map/contracts";
-import { Bookmark, BookmarkCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { type EventListItem } from "@town-map/contracts";
 import { GameIcon } from "@/GameIcon";
 import { slugifyShop } from "@/lib/shop-utils";
 
@@ -64,25 +62,22 @@ export function timeLabel(dateString: string) {
 export interface EventRowProps {
   event: EventListItem;
   active?: boolean;
-  saved: boolean;
-  canSave: boolean;
+  saved?: boolean;
+  canSave?: boolean;
   layoutIdPrefix?: string;
   showLocation?: boolean;
   onPreview?: (eventId: string | null) => void;
   onSelect: (eventId: string) => void;
-  onToggleSave: (eventId: string) => void;
+  onToggleSave?: (eventId: string) => void;
 }
 
 export function EventRow({
   event,
   active = false,
-  saved,
-  canSave,
   layoutIdPrefix = "discover",
   showLocation = true,
   onPreview,
   onSelect,
-  onToggleSave,
 }: EventRowProps) {
   const location = [event.venue?.name, event.venue?.city, event.venue?.region].filter(Boolean).join(" · ");
   const formattedTime = timeLabel(event.startsAt);
@@ -141,46 +136,6 @@ export function EventRow({
           </p>
         </motion.div>
       </div>
-
-      <motion.div layout className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-center">
-        {event.sourceUrl ? (
-          <motion.a
-            layoutId={`button-${layoutIdPrefix}-${event.id}`}
-            href={event.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="px-3.5 py-1.5 text-xs rounded-full font-bold bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 shrink-0 shadow-xs transition-colors"
-          >
-            Event Page
-          </motion.a>
-        ) : (
-          <motion.button
-            layoutId={`button-${layoutIdPrefix}-${event.id}`}
-            className="px-3.5 py-1.5 text-xs rounded-full font-bold bg-secondary text-secondary-foreground shrink-0 transition-colors"
-          >
-            Event
-          </motion.button>
-        )}
-
-        {canSave && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={`size-8 rounded-full ${saved ? "text-primary" : "text-muted-foreground"}`}
-            aria-pressed={saved}
-            aria-label={saved ? `Remove ${event.title} from My events` : `Save ${event.title} to My events`}
-            title={saved ? "Saved" : "Save"}
-            onClick={(clickEvent) => {
-              clickEvent.stopPropagation();
-              onToggleSave(event.id);
-            }}
-          >
-            {saved ? <BookmarkCheck className="size-4" /> : <Bookmark className="size-4" />}
-          </Button>
-        )}
-      </motion.div>
     </motion.div>
   );
 }

@@ -185,25 +185,6 @@ export function ExpandableEventCardModal({
                       </motion.div>
                     </motion.div>
                   </div>
-
-                  {event.sourceUrl ? (
-                    <motion.a
-                      layoutId={`button-${layoutIdPrefix}-${event.id}`}
-                      href={event.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-4 py-2.5 text-xs rounded-full font-bold bg-primary text-primary-foreground hover:bg-primary/90 shrink-0 transition-colors shadow-xs"
-                    >
-                      Event Page
-                    </motion.a>
-                  ) : (
-                    <motion.button
-                      layoutId={`button-${layoutIdPrefix}-${event.id}`}
-                      className="px-4 py-2 text-xs rounded-full font-bold bg-secondary text-secondary-foreground shrink-0"
-                    >
-                      Event
-                    </motion.button>
-                  )}
                 </div>
 
                 {/* `layout` makes this a projection node so it cancels the scale the expanding
