@@ -93,9 +93,6 @@ import { Typography } from "@/components/ui/typography";
 import { EventRow, eventMetadata, formatPrice, dateLabel, timeLabel } from "@/components/ui/event-row";
 import { ShopDetailPage } from "@/components/shop/ShopDetailPage";
 import { slugifyShop } from "@/lib/shop-utils";
-import { useEvents } from "@/hooks/useEvents";
-import { useSavedEvents } from "@/hooks/useSavedEvents";
-import { useUserPreferences } from "@/hooks/useUserPreferences";
 import {
   DATE_OPTIONS,
   DEFAULT_RADIUS_MILES,
@@ -422,6 +419,10 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       : gameSelection.filter((game) => catalog.ids.includes(game))),
     [gameSelection, catalog],
   );
+  const [events, setEvents] = useState<EventListItem[]>([]);
+  // True when the area holds more events than one query will gather, so the map
+  // is showing a subset rather than everything nearby.
+  const [resultsTruncated, setResultsTruncated] = useState(false);
   const [query, setQuery] = useState(initialParams.get("q") ?? "");
   const [dateFilter, setDateFilter] = useState<DateFilter>(initialDateFilter);
   const [viewMode, setViewMode] = useState<ViewMode>(initialParams.get("view") === "map" ? "map" : "list");
@@ -442,6 +443,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [placeQuery, setPlaceQuery] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [radiusMiles, setRadiusMiles] = useState(initialNumber("radius", DEFAULT_RADIUS_MILES));
   const [priceFilter, setPriceFilter] = useState<PriceFilter>(initialPriceFilter);
+  const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "locating">("idle");
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const [locationEditorOpen, setLocationEditorOpen] = useState(false);
@@ -452,17 +454,136 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [expandedLayoutIdPrefix, setExpandedLayoutIdPrefix] = useState<string>("discover");
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => initialTab(auth.enabled));
+  const [savedEvents, setSavedEvents] = useState<EventListItem[]>([]);
   const [savedStatus, setSavedStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [savedReloadKey, setSavedReloadKey] = useState(0);
 
+  const expandedEvent = useMemo(
+    () => events.find((candidate) => candidate.id === expandedEventId) ?? savedEvents.find((candidate) => candidate.id === expandedEventId) ?? null,
+    [expandedEventId, events, savedEvents],
+  );
+  // Saving is an account feature, so there is nothing to write to until Clerk has
+  // both loaded and reported somebody signed in.
   const canSave = auth.enabled && auth.loaded && auth.signedIn;
+  const savedIds = useMemo(() => new Set(savedEvents.map((event) => event.id)), [savedEvents]);
 
-  // Trails `query` by one debounce interval so typing stays lag-free
+  useEffect(() => {
+    if (!auth.enabled || !auth.loaded) return;
+    if (!auth.signedIn) {
+      // Signing out has to clear the list rather than leave the previous
+      // account's saves on screen for the next person to use this browser.
+      setSavedEvents([]);
+      setSavedStatus("idle");
+      setSavedNotice(null);
+      return;
+    }
+    const controller = new AbortController();
+    setSavedStatus("loading");
+    fetchSavedEvents(auth.getToken, controller.signal)
+      .then((saved) => {
+        setSavedEvents(saved.events);
+        setSavedStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSavedStatus("error");
+      });
+    return () => controller.abort();
+  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, savedReloadKey]);
+
+  /**
+   * Applied locally before the request is sent. The icon is the only feedback a
+   * save has, and waiting a round trip to move it reads as a dropped tap; a
+   * failure puts the previous list back and says so.
+   */
+  const toggleSaved = useCallback(async (eventId: string) => {
+    if (!canSave) return;
+    const previous = savedEvents;
+    const wasSaved = previous.some((candidate) => candidate.id === eventId);
+    const event = previous.find((candidate) => candidate.id === eventId)
+      ?? events.find((candidate) => candidate.id === eventId);
+    if (!event) return;
+    setSavedNotice(null);
+    setSavedEvents(wasSaved
+      ? previous.filter((candidate) => candidate.id !== eventId)
+      : sortEvents([...previous, event]));
+    try {
+      if (wasSaved) await unsaveEvent(eventId, auth.getToken);
+      else await saveEvent(eventId, auth.getToken);
+    } catch (error) {
+      setSavedEvents(previous);
+      setSavedNotice(error instanceof Error && error.message
+        ? error.message
+        : (wasSaved
+          ? "We couldn't remove that event. Please try again."
+          : "We couldn't save that event. Please try again."));
+      console.error("Updating saved events failed", error);
+    }
+  }, [auth.getToken, canSave, events, savedEvents]);
+
+  useEffect(() => {
+    if (!auth.enabled || !auth.loaded) return;
+    if (!auth.signedIn) {
+      setHomeAddress(null);
+      setAccountGames([]);
+      setPreferenceGamesDraft([]);
+      setOnboardingCompleted(false);
+      setPreferencesReady(true);
+      setSelectedGames(initialGames());
+      setPreferenceStatus("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setPreferencesReady(false);
+    setPreferenceStatus("loading");
+    fetchUserPreferences(auth.getToken, controller.signal)
+      .then(async (preferences) => {
+        setHomeAddress(preferences.homeAddress);
+        setHomeDraft(preferences.homeAddress ?? "");
+        setAccountGames(preferences.selectedGames);
+        setPreferenceGamesDraft(preferences.selectedGames);
+        setOnboardingCompleted(preferences.onboardingCompleted);
+        if (initialParams.get("games") === null && preferences.selectedGames.length > 0) {
+          setSelectedGames(preferences.selectedGames);
+        }
+        if (preferences.homeAddress) setPlaceQuery(preferences.homeAddress);
+        const hasUrlLocation = initialParams.has("place") || (initialParams.has("lat") && initialParams.has("lng"));
+        if (preferences.homeAddress && !hasUrlLocation) {
+          try {
+            const result = await geocodePlace(preferences.homeAddress, controller.signal);
+            if (controller.signal.aborted) return;
+            if (result) {
+              setLocation({ latitude: result.latitude, longitude: result.longitude });
+              setLocationLabel(result.label);
+            } else {
+              setLocationNotice("Your home is saved, but we couldn't locate it right now.");
+            }
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") return;
+            setLocationNotice("Your home is saved, but we couldn't locate it right now.");
+          }
+        }
+        if (controller.signal.aborted) return;
+        setPreferencesReady(true);
+        setPreferenceStatus("idle");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPreferencesReady(false);
+        setPreferenceStatus("error");
+      });
+    return () => controller.abort();
+  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, preferencesReloadKey]);
+
+  // Trails `query` by one debounce interval. The input stays fully controlled by
+  // `query` so typing never lags; this is only what the request is keyed on.
   const [searchTerm, setSearchTerm] = useState(query.trim());
 
   useEffect(() => {
     const trimmed = query.trim();
+    // Clearing the box should restore the unfiltered list immediately — there is
+    // no half-typed word to wait out.
     if (!trimmed) {
       setSearchTerm("");
       return;
@@ -471,50 +592,38 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  // SWR hook for main event queries
-  const {
-    events: swrEvents,
-    truncated: resultsTruncated,
-    isLoading: isEventsLoading,
-    error: eventsError,
-  } = useEvents({
-    games: selectedGames,
-    query: searchTerm,
-    latitude: location.latitude,
-    longitude: location.longitude,
-    radiusMiles,
-    enabled: !(
-      (auth.enabled && (!auth.loaded || (auth.signedIn && !preferencesReady))) ||
-      locationStatus === "searching"
-    ),
-  });
-
-  const events = useMemo(() => {
-    if (eventsError && (import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true")) {
-      return demoEvents;
+  useEffect(() => {
+    if ((auth.enabled && (!auth.loaded || (auth.signedIn && !preferencesReady))) || locationStatus === "searching") {
+      setStatus("loading");
+      return;
     }
-    return swrEvents;
-  }, [swrEvents, eventsError]);
+    if (selectedGames.length === 0) {
+      setEvents([]);
+      setStatus("live");
+      return;
+    }
 
-  const status = isEventsLoading
-    ? "loading"
-    : eventsError
-    ? import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true"
-      ? "preview"
-      : "error"
-    : "live";
-
-  // SWR hook for user saved events
-  const {
-    savedEvents,
-    savedIds,
-    toggleSaved,
-  } = useSavedEvents(auth, events);
-
-  const expandedEvent = useMemo(
-    () => events.find((candidate) => candidate.id === expandedEventId) ?? savedEvents.find((candidate) => candidate.id === expandedEventId) ?? null,
-    [expandedEventId, events, savedEvents],
-  );
+    const controller = new AbortController();
+    setStatus("loading");
+    fetchEvents({ games: selectedGames, query: searchTerm, ...location, radiusMiles, signal: controller.signal })
+      .then(({ events: nextEvents, truncated }) => {
+        setEvents(nextEvents);
+        setResultsTruncated(truncated);
+        setStatus("live");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setResultsTruncated(false);
+        if (import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === "true") {
+          setEvents(demoEvents);
+          setStatus("preview");
+        } else {
+          setEvents([]);
+          setStatus("error");
+        }
+      });
+    return () => controller.abort();
+  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, searchTerm, location, radiusMiles, locationStatus, preferencesReady, reloadKey]);
 
   useEffect(() => {
     const params = new URLSearchParams();

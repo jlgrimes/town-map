@@ -22,7 +22,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { ExpandableEventCardModal } from "@/components/ui/expandable-card";
 import { DotBackground } from "@/components/ui/dot-background";
 import { EventRow, eventMetadata, formatPrice } from "@/components/ui/event-row";
-import { useShopEvents } from "@/hooks/useShopEvents";
+import { fetchEventsForShop } from "../../api";
 import { GameIcon } from "../../GameIcon";
 import { ShopStaticMap } from "./ShopStaticMap";
 import { type GameCatalog } from "../../games";
@@ -48,18 +48,34 @@ export function ShopDetailPage({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
+  // Direct backend fetched events state
+  const [backendEvents, setBackendEvents] = useState<EventListItem[] | null>(null);
+  const [isLoadingBackend, setIsLoadingBackend] = useState(true);
+
   // Derive initial matching events from prop
   const localShopEvents = useMemo(() => {
     if (!shopSlug) return [];
-    return initialEvents.filter((evt: EventListItem) => {
+    return initialEvents.filter((evt) => {
       if (!evt.venue || !evt.venue.name) return false;
       return matchesShopSlug(evt.venue.name, evt.venue.city, shopSlug);
     });
   }, [initialEvents, shopSlug]);
 
+  // Combined shop events: backend results take priority once loaded, fallback to local
+  const shopEvents = useMemo(() => {
+    if (backendEvents && backendEvents.length > 0) {
+      // Filter backend results to ensure they belong to this shop
+      return backendEvents.filter((evt) => {
+        if (!evt.venue || !evt.venue.name) return false;
+        return matchesShopSlug(evt.venue.name, evt.venue.city, shopSlug || "");
+      });
+    }
+    return localShopEvents;
+  }, [backendEvents, localShopEvents, shopSlug]);
+
   // Extract venue/shop details from available events
   const shopInfo = useMemo<ShopInfo | null>(() => {
-    const firstEvent = localShopEvents[0];
+    const firstEvent = shopEvents[0] ?? localShopEvents[0];
     if (firstEvent && firstEvent.venue && firstEvent.venue.name) {
       const v = firstEvent.venue;
       return {
@@ -95,28 +111,38 @@ export function ShopDetailPage({
     }
 
     return null;
-  }, [localShopEvents, initialEvents, shopSlug]);
+  }, [shopEvents, localShopEvents, initialEvents, shopSlug]);
 
-  const queryTerm = shopInfo?.name ?? shopSlug?.replace(/-/g, " ") ?? "";
-  const { events: fetchedEvents, isLoading: isLoadingBackend } = useShopEvents(queryTerm);
+  // Fetch full upcoming shop events timeline directly from backend API
+  useEffect(() => {
+    if (!shopSlug) return;
+    const controller = new AbortController();
+    setIsLoadingBackend(true);
 
-  // Combined shop events: SWR fetched events take priority once loaded, fallback to local
-  const shopEvents = useMemo(() => {
-    if (fetchedEvents && fetchedEvents.length > 0) {
-      return fetchedEvents.filter((evt: EventListItem) => {
-        if (!evt.venue || !evt.venue.name) return false;
-        return matchesShopSlug(evt.venue.name, evt.venue.city, shopSlug || "");
+    const queryTerm = shopInfo?.name ?? shopSlug.replace(/-/g, " ");
+
+    fetchEventsForShop(queryTerm, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted) {
+          setBackendEvents(res.events);
+          setIsLoadingBackend(false);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setIsLoadingBackend(false);
+        }
       });
-    }
-    return localShopEvents;
-  }, [fetchedEvents, localShopEvents, shopSlug]);
+
+    return () => controller.abort();
+  }, [shopSlug, shopInfo?.name]);
 
   // Filter shop events by text search query
   const filteredEvents = useMemo(() => {
     if (!searchQuery.trim()) return shopEvents;
     const query = searchQuery.toLowerCase();
     return shopEvents.filter(
-      (evt: EventListItem) =>
+      (evt) =>
         evt.title.toLowerCase().includes(query) ||
         evt.game.toLowerCase().includes(query) ||
         (evt.format && evt.format.toLowerCase().includes(query))
@@ -133,7 +159,7 @@ export function ShopDetailPage({
 
   // Active event for expanded detail modal
   const activeEvent = useMemo(
-    () => shopEvents.find((evt: EventListItem) => evt.id === selectedEventId) ?? null,
+    () => shopEvents.find((evt) => evt.id === selectedEventId) ?? null,
     [shopEvents, selectedEventId]
   );
 
@@ -142,7 +168,7 @@ export function ShopDetailPage({
 
   const gamesFeatured = useMemo(() => {
     const set = new Set<string>();
-    shopEvents.forEach((evt: EventListItem) => set.add(evt.game));
+    shopEvents.forEach((evt) => set.add(evt.game));
     return Array.from(set);
   }, [shopEvents]);
 
