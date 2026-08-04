@@ -192,7 +192,13 @@ export function ExpandableEventCardModal({
                   {event.title}
                 </motion.h3>
 
-                <div className="mt-3 flex flex-wrap items-center gap-4">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, delay: 0.05 }}
+                  className="mt-3 flex flex-wrap items-center gap-4"
+                >
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
                     <Calendar className="size-4 text-primary" />
                     <Typography variant="body" as="span" className="font-medium">
@@ -205,68 +211,82 @@ export function ExpandableEventCardModal({
                       {timeFormatted}
                     </Typography>
                   </div>
-                </div>
+                </motion.div>
               </div>
 
-              {/* Venue / Location Details */}
-              <div className="rounded-2xl border bg-muted/20 p-4 space-y-2">
-                <div className="flex items-start gap-2.5">
-                  <MapPin className="size-5 shrink-0 text-primary mt-0.5" />
-                  <div>
-                    <Typography variant="h3" as="h4">
-                      {event.venue?.name || "Venue to be announced"}
-                    </Typography>
-                    {fullAddress && (
-                      <Typography variant="caption" className="mt-0.5 block leading-relaxed">
-                        {fullAddress}
+              {/* Venue / Location Details & Extra Metadata */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, delay: 0.08 }}
+                className="space-y-6"
+              >
+                <div className="rounded-2xl border bg-muted/20 p-4 space-y-2">
+                  <div className="flex items-start gap-2.5">
+                    <MapPin className="size-5 shrink-0 text-primary mt-0.5" />
+                    <div>
+                      <Typography variant="h3" as="h4">
+                        {event.venue?.name || "Venue to be announced"}
                       </Typography>
-                    )}
-                    {event.distanceMiles !== null && (
-                      <Typography variant="caption" className="mt-1 flex items-center font-medium">
-                        <Navigation className="inline size-3 mr-1 text-primary" />
-                        {event.distanceMiles} miles away
-                      </Typography>
-                    )}
+                      {fullAddress && (
+                        <Typography variant="caption" className="mt-0.5 block leading-relaxed">
+                          {fullAddress}
+                        </Typography>
+                      )}
+                      {event.distanceMiles !== null && (
+                        <Typography variant="caption" className="mt-1 flex items-center font-medium">
+                          <Navigation className="inline size-3 mr-1 text-primary" />
+                          {event.distanceMiles} miles away
+                        </Typography>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Metadata Badges / Info */}
-              <div className="space-y-3">
-                <Typography variant="kicker" as="h4">
-                  Event Details
-                </Typography>
-                <div className="flex flex-wrap gap-2">
-                  {price && (
-                    <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                      <DollarSign className="size-3 text-emerald-500" />
-                      {price}
-                    </Badge>
-                  )}
-                  {event.capacity !== null && (
-                    <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                      <Users className="size-3 text-blue-500" />
-                      Capacity: {event.capacity}
-                    </Badge>
-                  )}
-                  {recurrence && (
-                    <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                      <Repeat className="size-3 text-purple-500" />
-                      {recurrence}
-                    </Badge>
-                  )}
-                  {details.map((detail) => (
-                    <Badge key={detail} variant="secondary" className="gap-1 py-1 px-3 text-xs font-medium">
-                      <Tag className="size-3" />
-                      {detail}
-                    </Badge>
-                  ))}
+                {/* Metadata Badges / Info */}
+                <div className="space-y-3">
+                  <Typography variant="kicker" as="h4">
+                    Event Details
+                  </Typography>
+                  <div className="flex flex-wrap gap-2">
+                    {price && (
+                      <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                        <DollarSign className="size-3 text-emerald-500" />
+                        {price}
+                      </Badge>
+                    )}
+                    {event.capacity !== null && (
+                      <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                        <Users className="size-3 text-blue-500" />
+                        Capacity: {event.capacity}
+                      </Badge>
+                    )}
+                    {recurrence && (
+                      <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                        <Repeat className="size-3 text-purple-500" />
+                        {recurrence}
+                      </Badge>
+                    )}
+                    {details.map((detail) => (
+                      <Badge key={detail} variant="secondary" className="gap-1 py-1 px-3 text-xs font-medium">
+                        <Tag className="size-3" />
+                        {detail}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </motion.div>
             </div>
 
             {/* Footer with Links & Actions */}
-            <div className="border-t bg-muted/30 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, delay: 0.1 }}
+              className="border-t bg-muted/30 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3"
+            >
               <div className="flex flex-wrap items-center gap-2 flex-1">
                 {event.sourceUrl && (
                   <a
@@ -313,7 +333,7 @@ export function ExpandableEventCardModal({
                   )}
                 </Button>
               )}
-            </div>
+            </motion.div>
           </motion.div>
         </div>
       )}
