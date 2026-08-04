@@ -425,6 +425,10 @@ export function EventMap({
     : null;
 
   useEffect(() => {
+    // Disabled map easeTo on store selection to prevent background camera animations
+    // and main-thread frame drops while modal card expands.
+    // TODO: Re-evaluate if map should only fly when interacted with directly on map pins.
+    /*
     if (!active || !selectedStore) return;
     const map = mapRef.current;
     if (!map) return;
@@ -433,6 +437,7 @@ export function EventMap({
       zoom: Math.max(map.getZoom(), 15),
       duration: 350,
     });
+    */
   }, [active, selectedStore]);
 
   return (
