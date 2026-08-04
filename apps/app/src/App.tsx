@@ -461,6 +461,7 @@ function EventRow({
   active,
   saved,
   canSave,
+  layoutIdPrefix = "discover",
   onPreview,
   onSelect,
   onToggleSave,
@@ -470,6 +471,7 @@ function EventRow({
   saved: boolean;
   /** False when nobody is signed in, in which case there is nowhere to save to. */
   canSave: boolean;
+  layoutIdPrefix?: string;
   onPreview: (eventId: string | null) => void;
   onSelect: (eventId: string) => void;
   onToggleSave: (eventId: string) => void;
@@ -484,7 +486,7 @@ function EventRow({
 
   return (
     <motion.li
-      layoutId={`card-${event.id}`}
+      layoutId={`card-${layoutIdPrefix}-${event.id}`}
       id={`event-${event.id}`}
       className={`scroll-mt-4 cursor-pointer px-3 py-3.5 transition-colors sm:px-4 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
       onMouseEnter={() => onPreview(event.id)}
@@ -502,21 +504,17 @@ function EventRow({
 
         <div className="min-w-0">
           <div className="flex items-start gap-2">
-            <motion.div layoutId={`game-icon-${event.id}`} className="shrink-0">
+            <motion.div layoutId={`game-icon-${layoutIdPrefix}-${event.id}`} className="shrink-0">
               <GameIcon game={event.game} className="size-5 object-contain mt-0.5" />
             </motion.div>
-            <motion.div layoutId={`title-${event.id}`} className="min-w-0">
-              <Typography variant="h3" as="h3">
-                {event.title}
-              </Typography>
-            </motion.div>
+            <motion.h3 layoutId={`title-${layoutIdPrefix}-${event.id}`} className="min-w-0 text-base leading-snug font-semibold tracking-tight text-foreground">
+              {event.title}
+            </motion.h3>
           </div>
-          <motion.div layoutId={`venue-${event.id}`}>
-            <Typography variant="body-muted" className="mt-1">
-              <span className="text-foreground font-medium">{location || "Venue to be announced"}</span>
-              {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
-            </Typography>
-          </motion.div>
+          <Typography variant="body-muted" className="mt-1">
+            <span className="text-foreground font-medium">{location || "Venue to be announced"}</span>
+            {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
+          </Typography>
           {details.length > 0 && (
             <Typography variant="body-sm" className="mt-1">
               {details.join(" · ")}
@@ -606,6 +604,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [expandedLayoutIdPrefix, setExpandedLayoutIdPrefix] = useState<string>("discover");
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => initialTab(auth.enabled));
   const [savedEvents, setSavedEvents] = useState<EventListItem[]>([]);
@@ -910,12 +909,20 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const handleMapSelect = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
     setExpandedEventId(eventId);
+    setExpandedLayoutIdPrefix("map");
     setHighlightedEventId(null);
   }, []);
 
-  const handleListSelect = useCallback((eventId: string) => {
+  const handleDiscoverSelect = useCallback((eventId: string) => {
     setSelectedEventId(eventId);
     setExpandedEventId(eventId);
+    setExpandedLayoutIdPrefix("discover");
+  }, []);
+
+  const handleSavedSelect = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+    setExpandedEventId(eventId);
+    setExpandedLayoutIdPrefix("saved");
   }, []);
 
   const handleClearSelectedEvent = useCallback(() => {
@@ -1235,8 +1242,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                                   active={false}
                                   saved
                                   canSave={canSave}
+                                  layoutIdPrefix="saved"
                                   onPreview={() => undefined}
-                                  onSelect={handleListSelect}
+                                  onSelect={handleSavedSelect}
                                   onToggleSave={toggleSaved}
                                 />
                               ))}
@@ -1400,8 +1408,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                                         active={event.id === activeEventId}
                                         saved={savedIds.has(event.id)}
                                         canSave={canSave}
+                                        layoutIdPrefix="discover"
                                         onPreview={setHighlightedEventId}
-                                        onSelect={handleListSelect}
+                                        onSelect={handleDiscoverSelect}
                                         onToggleSave={toggleSaved}
                                       />
                                     ))}
@@ -1460,6 +1469,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       </SidebarProvider>
       <ExpandableEventCardModal
         event={expandedEvent}
+        layoutIdPrefix={expandedLayoutIdPrefix}
         onClose={() => setExpandedEventId(null)}
         saved={expandedEvent ? savedIds.has(expandedEvent.id) : false}
         canSave={canSave}

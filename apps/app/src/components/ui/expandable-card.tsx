@@ -45,6 +45,7 @@ export function useOutsideClick(
 
 interface ExpandableEventCardProps {
   event: EventListItem | null;
+  layoutIdPrefix?: string;
   onClose: () => void;
   saved: boolean;
   canSave: boolean;
@@ -56,6 +57,7 @@ interface ExpandableEventCardProps {
 
 export function ExpandableEventCardModal({
   event,
+  layoutIdPrefix = "discover",
   onClose,
   saved,
   canSave,
@@ -146,7 +148,7 @@ export function ExpandableEventCardModal({
 
           {/* Aceternity Expanded Card Container */}
           <motion.div
-            layoutId={`card-${event.id}`}
+            layoutId={`card-${layoutIdPrefix}-${event.id}`}
             ref={ref}
             transition={{ type: "spring", stiffness: 350, damping: 30 }}
             className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-border bg-card text-card-foreground shadow-2xl"
@@ -155,7 +157,7 @@ export function ExpandableEventCardModal({
             <div className="relative flex items-center justify-between border-b bg-muted/40 px-6 py-5">
               <div className="flex items-center gap-3">
                 <motion.div
-                  layoutId={`game-icon-${event.id}`}
+                  layoutId={`game-icon-${layoutIdPrefix}-${event.id}`}
                   className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50"
                 >
                   <GameIcon game={event.game} className="size-7 object-contain" />
@@ -183,11 +185,12 @@ export function ExpandableEventCardModal({
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
               {/* Title & Timing */}
               <div>
-                <motion.div layoutId={`title-${event.id}`}>
-                  <Typography variant="h1" as="h2">
-                    {event.title}
-                  </Typography>
-                </motion.div>
+                <motion.h3
+                  layoutId={`title-${layoutIdPrefix}-${event.id}`}
+                  className="text-2xl font-bold tracking-tight text-foreground"
+                >
+                  {event.title}
+                </motion.h3>
 
                 <div className="mt-3 flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
@@ -206,7 +209,7 @@ export function ExpandableEventCardModal({
               </div>
 
               {/* Venue / Location Details */}
-              <motion.div layoutId={`venue-${event.id}`} className="rounded-2xl border bg-muted/20 p-4 space-y-2">
+              <div className="rounded-2xl border bg-muted/20 p-4 space-y-2">
                 <div className="flex items-start gap-2.5">
                   <MapPin className="size-5 shrink-0 text-primary mt-0.5" />
                   <div>
@@ -226,7 +229,7 @@ export function ExpandableEventCardModal({
                     )}
                   </div>
                 </div>
-              </motion.div>
+              </div>
 
               {/* Metadata Badges / Info */}
               <div className="space-y-3">
