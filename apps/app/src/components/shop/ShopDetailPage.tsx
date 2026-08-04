@@ -1,5 +1,5 @@
-import { Suspense, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import type { EventListItem } from "@town-map/contracts";
 import {
   ArrowLeft,
@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Globe,
   MapPin,
-  Phone,
   Share2,
   Sparkles,
   Check,
@@ -18,11 +17,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Typography } from "@/components/ui/typography";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { ExpandableEventCardModal } from "@/components/ui/expandable-card";
 import { DotBackground } from "@/components/ui/dot-background";
+import { EventRow, eventMetadata, formatPrice } from "@/components/ui/event-row";
 import { GameIcon } from "../../GameIcon";
-import { EventMap } from "../../EventMap";
+import { ShopStaticMap } from "./ShopStaticMap";
 import { type GameCatalog } from "../../games";
 import { matchesShopSlug, slugifyShop, type ShopInfo } from "../../lib/shop-utils";
 
@@ -74,7 +74,6 @@ export function ShopDetailPage({
       };
     }
 
-    // Try finding in any event if main list has it
     for (const evt of events) {
       if (evt.venue?.name && matchesShopSlug(evt.venue.name, evt.venue.city, shopSlug || "")) {
         const v = evt.venue;
@@ -116,13 +115,13 @@ export function ShopDetailPage({
     }
   };
 
-  // Find active event for modal
+  // Active event for expanded detail modal
   const activeEvent = useMemo(
     () => shopEvents.find((evt) => evt.id === selectedEventId) ?? null,
     [shopEvents, selectedEventId]
   );
 
-  const shopName = shopInfo?.name || shopSlug?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "Shop";
+  const shopName = shopInfo?.name || shopSlug?.replace(/-/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "Shop";
   const locationLabel = [shopInfo?.address, shopInfo?.city, shopInfo?.region].filter(Boolean).join(", ");
 
   const gamesFeatured = useMemo(() => {
@@ -195,7 +194,7 @@ export function ShopDetailPage({
                       className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs font-medium"
                     >
                       <GameIcon game={game} className="h-3.5 w-3.5" />
-                      <span className="capitalize">{game.replace(/-/g, " ")}</span>
+                      <span className="capitalize">{catalog.label(game)}</span>
                     </div>
                   ))}
                 </div>
@@ -237,7 +236,7 @@ export function ShopDetailPage({
 
         {/* Grid: Map & Events List */}
         <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-12">
-          {/* Left Column: Interactive Map View */}
+          {/* Left Column: Non-interactive Static Map View */}
           <div className="space-y-4 lg:col-span-5">
             <div className="flex items-center justify-between">
               <Typography variant="h3" className="flex items-center gap-2 text-lg font-bold">
@@ -246,27 +245,13 @@ export function ShopDetailPage({
               </Typography>
             </div>
 
-            <div className="h-[340px] w-full overflow-hidden rounded-xl border bg-card shadow-sm sm:h-[420px]">
+            <div className="h-[300px] w-full overflow-hidden rounded-xl border bg-card shadow-sm sm:h-[380px]">
               {shopInfo?.latitude && shopInfo?.longitude ? (
-                <Suspense
-                  fallback={
-                    <div className="flex h-full items-center justify-center bg-muted/40">
-                      <p className="text-sm text-muted-foreground">Loading Map...</p>
-                    </div>
-                  }
-                >
-                  <EventMap
-                    center={{ latitude: shopInfo.latitude, longitude: shopInfo.longitude }}
-                    events={shopEvents}
-                    active={true}
-                    selectedEventId={selectedEventId}
-                    activeEventId={selectedEventId}
-                    onSelect={(id) => setSelectedEventId(id)}
-                    onPreview={() => {}}
-                    onDeselect={() => setSelectedEventId(null)}
-                    catalog={catalog}
-                  />
-                </Suspense>
+                <ShopStaticMap
+                  latitude={shopInfo.latitude}
+                  longitude={shopInfo.longitude}
+                  shopName={shopName}
+                />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center p-6 text-center bg-muted/20">
                   <MapPin className="h-10 w-10 text-muted-foreground/50 mb-2" />
@@ -318,77 +303,19 @@ export function ShopDetailPage({
                 </Empty>
               </div>
             ) : (
-              <div className="space-y-3">
-                {filteredEvents.map((evt) => {
-                  const isSaved = savedEventIds.has(evt.id);
-                  const startDate = new Date(evt.startsAt);
-                  const dateStr = startDate.toLocaleDateString(undefined, {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  });
-                  const timeStr = startDate.toLocaleTimeString(undefined, {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  });
-
-                  return (
-                    <div
-                      key={evt.id}
-                      onClick={() => setSelectedEventId(evt.id)}
-                      className="group relative cursor-pointer overflow-hidden rounded-xl border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-md"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted/60 p-2 group-hover:border-primary/40">
-                            <GameIcon game={evt.game} className="h-6 w-6" />
-                          </div>
-
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-semibold text-primary">{dateStr} • {timeStr}</span>
-                              {evt.format && (
-                                <Badge variant="secondary" className="px-1.5 py-0 text-[10px] capitalize">
-                                  {evt.format}
-                                </Badge>
-                              )}
-                            </div>
-
-                            <Typography variant="h4" className="text-base font-bold group-hover:text-primary transition-colors">
-                              {evt.title}
-                            </Typography>
-
-                            {evt.description && (
-                              <p className="line-clamp-2 text-xs text-muted-foreground">
-                                {evt.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Price & Save button */}
-                        <div className="flex flex-col items-end gap-2 shrink-0">
-                          {evt.priceAmount !== null && evt.priceAmount !== undefined ? (
-                            <span className="text-xs font-bold text-foreground">
-                              {evt.priceAmount === 0 ? "Free" : `$${evt.priceAmount}`}
-                            </span>
-                          ) : null}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleSave(evt.id);
-                            }}
-                          >
-                            <Calendar className={`h-4 w-4 ${isSaved ? "fill-primary text-primary" : ""}`} />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="divide-y rounded-2xl border bg-card p-1 shadow-xs">
+                {filteredEvents.map((evt) => (
+                  <EventRow
+                    key={evt.id}
+                    event={evt}
+                    saved={savedEventIds.has(evt.id)}
+                    canSave={true}
+                    showLocation={false}
+                    layoutIdPrefix="shop"
+                    onSelect={(id) => setSelectedEventId(id)}
+                    onToggleSave={onToggleSave}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -402,8 +329,8 @@ export function ShopDetailPage({
         saved={activeEvent ? savedEventIds.has(activeEvent.id) : false}
         canSave={true}
         onToggleSave={onToggleSave}
-        eventMetadata={(evt) => [evt.format, evt.eventType].filter(Boolean) as string[]}
-        formatPrice={(evt) => evt.priceAmount !== null && evt.priceAmount !== undefined ? (evt.priceAmount === 0 ? "Free" : `$${evt.priceAmount}`) : null}
+        eventMetadata={eventMetadata}
+        formatPrice={formatPrice}
         recurrenceLabel={() => null}
       />
     </DotBackground>

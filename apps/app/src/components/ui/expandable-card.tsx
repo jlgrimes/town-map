@@ -300,6 +300,17 @@ export function ExpandableEventCardModal({
                       </div>
                     </div>
 
+                    {event.description && (
+                      <div className="w-full space-y-1.5 pt-1">
+                        <Typography variant="kicker" as="h4">
+                          Description
+                        </Typography>
+                        <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed whitespace-pre-line bg-muted/30 border rounded-2xl p-4">
+                          {event.description}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="w-full pt-2 flex flex-wrap items-center gap-3">
                       {mapsUrl && (
                         <a
