@@ -1123,10 +1123,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
 
             <main id="main-content" className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-3 sm:px-6 lg:px-8">
               {tab === "preferences" ? (
-                <section aria-labelledby="preferences-heading" className="mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col py-4">
-                  <div className="border-b pb-4">
-                    <h2 id="preferences-heading" className="text-xl font-bold tracking-tight">App preferences</h2>
-                    <p className="text-sm text-muted-foreground mt-1">
+                <section aria-label="Preferences" className="mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col py-2">
+                  <div className="border-b pb-3">
+                    <p className="text-sm text-muted-foreground">
                       Configure your default home location and preferred trading card games for tournament search.
                     </p>
                   </div>
@@ -1178,17 +1177,16 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                   </div>
                 </section>
               ) : tab === "my-events" ? (
-                <section aria-labelledby="my-events-heading" className="flex min-h-0 flex-1 flex-col">
-                  <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b py-2 text-sm">
-                    <h2 id="my-events-heading" className="font-semibold">My events</h2>
-                    {canSave && savedStatus !== "error" && (
-                      <p className="text-muted-foreground">
+                <section aria-label="My events" className="flex min-h-0 flex-1 flex-col">
+                  {canSave && savedStatus !== "error" && (
+                    <div className="flex min-h-9 shrink-0 items-center justify-between gap-3 border-b pb-2 text-sm">
+                      <p className="text-xs text-muted-foreground">
                         {savedStatus === "loading"
                           ? "Loading your events…"
                           : `${savedEvents.length} ${savedEvents.length === 1 ? "event" : "events"} saved`}
                       </p>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {savedNotice && (
                     <p role="status" className="flex items-start gap-1 py-2 text-xs text-destructive">
