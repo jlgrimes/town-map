@@ -173,20 +173,26 @@ export function ExpandableEventCardModal({
                         <GameIcon game={event.game} className="size-10 object-contain" />
                       </div>
                     </motion.div>
-                    <div>
-                      <motion.h3
-                        layoutId={`title-${layoutIdPrefix}-${event.id}`}
-                        className="font-bold text-foreground text-lg leading-tight"
+                    {/* The row truncates its title at text-sm inside a flex-1 box; here it wraps
+                        at text-lg. A shared layoutId would have to scale the element to bridge
+                        those two widths, which stretches the glyphs. So this text isn't shared —
+                        `layout` makes the outer node cancel the card's scale, and the inner node
+                        fades in at its final size. */}
+                    <motion.div layout className="min-w-0">
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, transition: { duration: 0.05 } }}
+                        transition={{ duration: 0.2, ease: "easeOut", delay: 0.08 }}
                       >
-                        {event.title}
-                      </motion.h3>
-                      <motion.p
-                        layoutId={`description-${layoutIdPrefix}-${event.id}`}
-                        className="text-muted-foreground text-sm mt-0.5"
-                      >
-                        {location || "Venue to be announced"}
-                      </motion.p>
-                    </div>
+                        <h3 className="font-bold text-foreground text-lg leading-tight">
+                          {event.title}
+                        </h3>
+                        <p className="text-muted-foreground text-sm mt-0.5">
+                          {location || "Venue to be announced"}
+                        </p>
+                      </motion.div>
+                    </motion.div>
                   </div>
 
                   {event.sourceUrl ? (
@@ -209,12 +215,15 @@ export function ExpandableEventCardModal({
                   )}
                 </div>
 
-                <div className="pt-4 relative px-5">
+                {/* `layout` makes this a projection node so it cancels the scale the expanding
+                    card would otherwise stretch its contents by. The fade-up lives on the inner
+                    div because layout and animating `y` both write to transform. */}
+                <motion.div layout className="pt-4 relative px-5">
                   <motion.div
-                    initial={{ opacity: 0, y: 12 }}
+                    initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 6 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    exit={{ opacity: 0, y: 8, transition: { duration: 0.1, ease: "easeIn" } }}
+                    transition={{ duration: 0.25, ease: "easeOut", delay: 0.1 }}
                     className="text-muted-foreground text-xs md:text-sm lg:text-base md:h-fit pb-6 flex flex-col items-start gap-4 overflow-auto"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 w-full pt-1">
@@ -322,7 +331,7 @@ export function ExpandableEventCardModal({
                       )}
                     </div>
                   </motion.div>
-                </div>
+                </motion.div>
               </div>
             </motion.div>
           </div>

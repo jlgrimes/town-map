@@ -501,24 +501,25 @@ function EventRow({
             <GameIcon game={event.game} className="size-8 object-contain" />
           </div>
         </motion.div>
-        <div className="min-w-0 flex-1">
-          <motion.h3
-            layoutId={`title-${layoutIdPrefix}-${event.id}`}
-            className="font-bold text-foreground text-sm leading-snug truncate"
-          >
+        {/* Deliberately not layoutId-shared with the modal: this box is truncated and
+            full-width, the modal's is content-width at a larger size, so a shared element
+            could only bridge them by scaling the text. `layout` still has to be here — on
+            close this row is the lead instance and would otherwise inherit the card's
+            shrink transform. */}
+        <motion.div layout className="min-w-0 flex-1">
+          <h3 className="font-bold text-foreground text-sm leading-snug truncate">
             {event.title}
-          </motion.h3>
-          <motion.p
-            layoutId={`description-${layoutIdPrefix}-${event.id}`}
-            className="text-xs text-muted-foreground mt-0.5 truncate"
-          >
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
             {location || "Venue to be announced"}
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : ""}
-          </motion.p>
-        </div>
+          </p>
+        </motion.div>
       </div>
 
-      <div className="flex items-center gap-2 mt-2 md:mt-0 shrink-0 self-end md:self-center">
+      {/* Same reason as the text block: the bookmark button has no layoutId of its own, so
+          this needs to be a projection node or it distorts as the card shrinks back. */}
+      <motion.div layout className="flex items-center gap-2 mt-2 md:mt-0 shrink-0 self-end md:self-center">
         {event.sourceUrl ? (
           <motion.a
             layoutId={`button-${layoutIdPrefix}-${event.id}`}
@@ -556,7 +557,7 @@ function EventRow({
             {saved ? <BookmarkCheck className="size-4" /> : <Bookmark className="size-4" />}
           </Button>
         )}
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
