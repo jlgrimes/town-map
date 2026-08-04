@@ -68,6 +68,7 @@ import {
   User,
   X,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   fetchEvents,
@@ -86,7 +87,6 @@ import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { SpotlightSearch } from "@/components/ui/spotlight-search";
 import { DotBackground } from "@/components/ui/dot-background";
 import { AnimatedTooltip } from "@/components/ui/animated-tooltip";
-import { MovingBorderCard } from "@/components/ui/moving-border";
 import { Typography } from "@/components/ui/typography";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
@@ -279,17 +279,15 @@ function UserFooterMenu({ auth, setTab }: { auth: AppAuth; setTab: (tab: Tab) =>
 function AccountSettingsCard() {
   const clerk = useClerk();
   return (
-    <MovingBorderCard containerClassName="max-w-xl">
-      <div className="p-5 flex items-center justify-between gap-4">
-        <div>
-          <h3 className="font-semibold text-sm">Account settings</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Manage your user profile, email addresses, and security settings via Clerk.</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => clerk.openUserProfile()}>
-          Manage account
-        </Button>
+    <div className="rounded-xl border bg-card p-5 shadow-xs flex items-center justify-between gap-4 max-w-xl">
+      <div>
+        <h3 className="font-semibold text-sm">Account settings</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Manage your user profile, email addresses, and security settings via Clerk.</p>
       </div>
-    </MovingBorderCard>
+      <Button variant="outline" size="sm" onClick={() => clerk.openUserProfile()}>
+        Manage account
+      </Button>
+    </div>
   );
 }
 
@@ -485,7 +483,8 @@ function EventRow({
   const recurrence = recurrenceLabel(event.series);
 
   return (
-    <li
+    <motion.li
+      layoutId={`card-${event.id}`}
       id={`event-${event.id}`}
       className={`scroll-mt-4 cursor-pointer px-3 py-3.5 transition-colors sm:px-4 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
       onMouseEnter={() => onPreview(event.id)}
@@ -503,15 +502,21 @@ function EventRow({
 
         <div className="min-w-0">
           <div className="flex items-start gap-2">
-            <GameIcon game={event.game} className="size-5 shrink-0 object-contain mt-0.5" />
-            <Typography variant="h3" as="h3" className="min-w-0">
-              {event.title}
-            </Typography>
+            <motion.div layoutId={`game-icon-${event.id}`} className="shrink-0">
+              <GameIcon game={event.game} className="size-5 object-contain mt-0.5" />
+            </motion.div>
+            <motion.div layoutId={`title-${event.id}`} className="min-w-0">
+              <Typography variant="h3" as="h3">
+                {event.title}
+              </Typography>
+            </motion.div>
           </div>
-          <Typography variant="body-muted" className="mt-1">
-            <span className="text-foreground font-medium">{location || "Venue to be announced"}</span>
-            {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
-          </Typography>
+          <motion.div layoutId={`venue-${event.id}`}>
+            <Typography variant="body-muted" className="mt-1">
+              <span className="text-foreground font-medium">{location || "Venue to be announced"}</span>
+              {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
+            </Typography>
+          </motion.div>
           {details.length > 0 && (
             <Typography variant="body-sm" className="mt-1">
               {details.join(" · ")}
@@ -544,7 +549,7 @@ function EventRow({
           </Button>
         )}
       </article>
-    </li>
+    </motion.li>
   );
 }
 
