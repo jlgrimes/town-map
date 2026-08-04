@@ -15,6 +15,7 @@ let deleteExpiredEvents: typeof import("./index.js").deleteExpiredEvents;
 function event(id: string, startsAt: string, raw: unknown = { id }): NormalizedEvent {
   return {
     sourceEventId: id,
+    sourceSeriesId: null,
     game: "magic",
     title: `Event ${id}`,
     description: null,

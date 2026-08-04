@@ -87,6 +87,9 @@ export function normalizeOnePieceEvent(event: BandaiEvent): NormalizedEvent {
     sourceEventId: String(event.id),
     game: "onepiece",
     title: event.event_series_title,
+    // Bandai groups its recurring events upstream; where present this is
+    // authoritative and beats anything derived from the schedule.
+    sourceSeriesId: event.event_series_id == null ? null : String(event.event_series_id),
     description: description(event),
     startsAt: startsAt(event),
     endsAt: null,

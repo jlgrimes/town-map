@@ -58,6 +58,7 @@ export function normalizeRiftboundEvent(event: RiftboundEvent): NormalizedEvent 
   const registrationUrl = normalizeUrl(event.url);
   return {
     sourceEventId: String(event.id),
+    sourceSeriesId: null,
     game: "riftbound",
     title: event.name,
     description: optional(event.description),

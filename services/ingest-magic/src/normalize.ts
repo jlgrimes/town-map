@@ -37,6 +37,7 @@ function normalizeUrl(value?: string | null) {
 export function normalizeMagicEvent(event: WotcEvent): NormalizedEvent {
   return {
     sourceEventId: String(event.id),
+    sourceSeriesId: null,
     game: "magic",
     title: event.title,
     description: event.description ?? null,

@@ -39,6 +39,7 @@ export function normalizeYugiohEvent(event: KonamiTournament): NormalizedEvent {
   const address = [location?.address1, location?.address2, location?.address3].filter(Boolean).join(", ") || event.address || null;
   return {
     sourceEventId: event.tournamentNo,
+    sourceSeriesId: null,
     game: "yugioh",
     title: event.tournamentName,
     description: null,

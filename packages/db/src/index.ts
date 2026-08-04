@@ -243,6 +243,48 @@ function coverageStatus(region: CoverageRegionRow, now: Date): CoverageRegionSta
 }
 
 /**
+ * Local weekday and minute-of-day for an occurrence, in the venue's own time.
+ *
+ * A UTC weekday and time shift by an hour across daylight saving, which would
+ * split a weekly series in two every spring and autumn. `timezone` is retained
+ * per event for exactly this; UTC is only the fallback when a source gives none.
+ */
+const LOCAL_SCHEDULE_SQL = `
+  (e.starts_at AT TIME ZONE COALESCE(e.timezone, 'UTC'))`;
+
+/**
+ * The deterministic key grouping occurrences into a series.
+ *
+ * An upstream series identifier wins where the source publishes one. Otherwise
+ * the key is derived from what actually characterises a recurring event: the
+ * venue, the game, the format, and the local weekday and start time. Title is
+ * excluded on purpose — "FNM", "Friday Night Magic" and "FNM #42" are one
+ * series, and including the title would fork it three ways.
+ */
+const SERIES_KEY_SQL = `
+  CASE
+    WHEN e.source_series_id IS NOT NULL THEN 'upstream:' || e.source_series_id
+    WHEN e.venue_id IS NULL THEN NULL
+    ELSE 'derived:' || e.venue_id::text
+      || ':' || e.game
+      || ':' || COALESCE(lower(btrim(e.format)), '')
+      || ':' || EXTRACT(dow FROM ${LOCAL_SCHEDULE_SQL})::int::text
+      || ':' || (
+           EXTRACT(hour FROM ${LOCAL_SCHEDULE_SQL})::int * 60
+           + EXTRACT(minute FROM ${LOCAL_SCHEDULE_SQL})::int
+         )::text
+  END`;
+
+/**
+ * How far a start time may move before it is treated as a different series.
+ *
+ * Wide enough to absorb a store shifting an evening tournament by half an hour,
+ * narrow enough that an afternoon and an evening event on the same night stay
+ * separate.
+ */
+const SERIES_DRIFT_MINUTES = 60;
+
+/**
  * Session-scoped lock so two maintenance runs cannot delete concurrently.
  */
 const RETENTION_LOCK_ID = 8042027;
@@ -292,6 +334,189 @@ export async function deleteExpiredEvents(
     await database.query("SELECT pg_advisory_unlock($1)", [RETENTION_LOCK_ID]);
   }
   return { deleted, skipped: false };
+}
+
+/**
+ * Groups a source's occurrences into recurring series.
+ *
+ * Runs after ingest rather than inside it, so the change-aware upsert on the
+ * hot path is untouched and a mistake here can be corrected by recomputing
+ * rather than by re-collecting.
+ *
+ * Three steps, each idempotent:
+ *  1. every unassigned occurrence gets its deterministic key;
+ *  2. a key with no series either joins one whose schedule it matches — this is
+ *     what stops a store moving its start time from forking the series and
+ *     orphaning subscribers — or starts a new one;
+ *  3. each affected series has its description and statistics refreshed.
+ */
+export async function assignEventSeries(source: EventSource, database?: Queryable) {
+  // The pass stages rows in a temporary table, which lives on one session and
+  // for one transaction. A pool would hand each statement a different
+  // connection, so when no session is supplied one is checked out explicitly.
+  if (database) {
+    const assigned = await assignEventSeriesWithin(source, database);
+    await refreshEventSeriesStatistics(source, database);
+    return assigned;
+  }
+  const client = await getPool().connect();
+  try {
+    const assigned = await assignEventSeriesWithin(source, client);
+    await refreshEventSeriesStatistics(source, client);
+    return assigned;
+  } finally {
+    client.release();
+  }
+}
+
+async function assignEventSeriesWithin(source: EventSource, database: Queryable) {
+  await database.query("BEGIN");
+  try {
+    const assigned = await stageAndAssign(source, database);
+    await database.query("COMMIT");
+    return assigned;
+  } catch (error) {
+    await database.query("ROLLBACK");
+    throw error;
+  }
+}
+
+async function stageAndAssign(source: EventSource, database: Queryable) {
+  // 1. Key the occurrences that do not have a series yet. Withdrawn events are
+  // skipped: a cancelled week says nothing about the schedule.
+  await database.query(
+    `CREATE TEMP TABLE pending_series_keys ON COMMIT DROP AS
+     SELECT e.id AS event_id,
+       ${SERIES_KEY_SQL} AS key,
+       e.game, e.venue_id, e.title, e.format,
+       COALESCE(e.timezone, 'UTC') AS timezone,
+       EXTRACT(dow FROM ${LOCAL_SCHEDULE_SQL})::int AS weekday,
+       (EXTRACT(hour FROM ${LOCAL_SCHEDULE_SQL})::int * 60
+        + EXTRACT(minute FROM ${LOCAL_SCHEDULE_SQL})::int) AS local_start_minute,
+       e.starts_at
+     FROM events e
+     WHERE e.source = $1
+       AND e.series_id IS NULL
+       AND e.withdrawn_at IS NULL
+       AND ${SERIES_KEY_SQL} IS NOT NULL`,
+    [source],
+  );
+
+  // 2a. Attach a new key to an existing series on the same local schedule.
+  // Requires exactly one candidate: a venue running two events an hour apart on
+  // the same night is two series, and merging them would be worse than forking.
+  await database.query(
+    `WITH unmatched AS (
+       SELECT DISTINCT key, game, venue_id, weekday, local_start_minute
+       FROM pending_series_keys p
+       WHERE NOT EXISTS (SELECT 1 FROM event_series_keys k WHERE k.source = $1 AND k.key = p.key)
+     ), candidate AS (
+       -- Only rows with exactly one match are used below, so which element the
+       -- aggregate picks is immaterial; uuid has no min().
+       SELECT u.key, (array_agg(s.id))[1] AS series_id, count(*) AS matches
+       FROM unmatched u
+       JOIN event_series s
+         ON s.source = $1 AND s.game = u.game AND s.venue_id = u.venue_id
+        AND s.weekday = u.weekday
+        AND abs(s.local_start_minute - u.local_start_minute) <= $2
+       GROUP BY u.key
+     )
+     INSERT INTO event_series_keys (source, key, series_id)
+     SELECT $1, key, series_id FROM candidate WHERE matches = 1
+     ON CONFLICT (source, key) DO NOTHING`,
+    [source, SERIES_DRIFT_MINUTES],
+  );
+
+  // 2b. Anything still unmatched starts a new series. The identifiers are
+  // generated up front rather than joined back from RETURNING: a key is
+  // distinguished by its format too, so venue and schedule alone would not
+  // match rows back unambiguously.
+  await database.query(
+    `CREATE TEMP TABLE new_event_series ON COMMIT DROP AS
+     SELECT DISTINCT ON (p.key)
+       p.key, gen_random_uuid() AS series_id, p.game, p.venue_id,
+       p.title, p.format, p.timezone, p.weekday, p.local_start_minute
+     FROM pending_series_keys p
+     WHERE NOT EXISTS (SELECT 1 FROM event_series_keys k WHERE k.source = $1 AND k.key = p.key)
+     -- Newest occurrence wins, so a series is described by its current title.
+     ORDER BY p.key, p.starts_at DESC`,
+    [source],
+  );
+  await database.query(
+    `INSERT INTO event_series (
+       id, source, game, venue_id, title, format, timezone, weekday, local_start_minute
+     )
+     SELECT series_id, $1, game, venue_id, title, format, timezone, weekday, local_start_minute
+     FROM new_event_series`,
+    [source],
+  );
+  await database.query(
+    `INSERT INTO event_series_keys (source, key, series_id)
+     SELECT $1, key, series_id FROM new_event_series
+     ON CONFLICT (source, key) DO NOTHING`,
+    [source],
+  );
+
+  // 3. Point the occurrences at their series.
+  const assigned = await database.query(
+    `UPDATE events e
+     SET series_id = k.series_id, updated_at = now()
+     FROM pending_series_keys p
+     JOIN event_series_keys k ON k.source = $1 AND k.key = p.key
+     WHERE e.id = p.event_id AND e.series_id IS DISTINCT FROM k.series_id`,
+    [source],
+  );
+
+  return { assigned: assigned.rowCount ?? 0 };
+}
+
+/**
+ * Recomputes each series' description and observed schedule from its
+ * occurrences.
+ *
+ * Cadence is only asserted once three occurrences have been seen at a
+ * consistent interval. Two events a week apart are a coincidence as easily as a
+ * pattern, and claiming "repeats weekly" from one gap would be a guess dressed
+ * up as a fact.
+ */
+export async function refreshEventSeriesStatistics(
+  source: EventSource,
+  database: Queryable = getPool(),
+) {
+  await database.query(
+    `WITH occurrence AS (
+       SELECT e.series_id, e.starts_at, e.title, e.format,
+         EXTRACT(day FROM e.starts_at - lag(e.starts_at) OVER (
+           PARTITION BY e.series_id ORDER BY e.starts_at))::int AS gap_days
+       FROM events e
+       WHERE e.source = $1 AND e.series_id IS NOT NULL AND e.withdrawn_at IS NULL
+     ), stats AS (
+       SELECT series_id,
+         count(*) AS occurrence_count,
+         min(starts_at) AS first_starts_at,
+         max(starts_at) AS last_starts_at,
+         min(starts_at) FILTER (WHERE starts_at >= now()) AS next_starts_at,
+         mode() WITHIN GROUP (ORDER BY gap_days) FILTER (WHERE gap_days > 0) AS modal_gap_days,
+         count(*) FILTER (WHERE gap_days > 0) AS gap_count
+       FROM occurrence GROUP BY series_id
+     ), latest AS (
+       SELECT DISTINCT ON (series_id) series_id, title, format
+       FROM occurrence ORDER BY series_id, starts_at DESC
+     )
+     UPDATE event_series s
+     SET occurrence_count = stats.occurrence_count,
+       first_starts_at = stats.first_starts_at,
+       last_starts_at = stats.last_starts_at,
+       next_starts_at = stats.next_starts_at,
+       title = latest.title,
+       format = latest.format,
+       -- Needs at least two observed gaps, so three occurrences.
+       cadence_days = CASE WHEN stats.gap_count >= 2 THEN stats.modal_gap_days END,
+       updated_at = now()
+     FROM stats JOIN latest ON latest.series_id = stats.series_id
+     WHERE s.id = stats.series_id`,
+    [source],
+  );
 }
 
 /**
@@ -460,7 +685,7 @@ export async function saveUserPreferences(
 const EVENT_MUTABLE_COLUMNS = [
   "game", "venue_id", "title", "description", "starts_at", "ends_at", "timezone",
   "status", "format", "event_type", "source_url", "registration_url", "price_amount",
-  "price_currency", "capacity", "is_online", "latitude", "longitude",
+  "price_currency", "capacity", "is_online", "latitude", "longitude", "source_series_id",
   // Included so that seeing a withdrawn event again counts as a change and
   // therefore un-withdraws it. `collection_region_id` is deliberately absent:
   // where two regions overlap, comparing it would make every shared event look
@@ -546,6 +771,7 @@ async function upsertEventBatch(
 ) {
   const payload = batch.map((event) => ({
     source_event_id: event.sourceEventId,
+    source_series_id: event.sourceSeriesId ?? null,
     game: event.game,
     venue_id: event.venue ? venueIds.get(event.venue.sourceVenueId) ?? null : null,
     title: event.title,
@@ -572,20 +798,20 @@ async function upsertEventBatch(
     `INSERT INTO events (
        source, source_event_id, game, venue_id, title, description, starts_at, ends_at,
        timezone, status, format, event_type, source_url, registration_url, price_amount,
-       price_currency, capacity, is_online, latitude, longitude,
+       price_currency, capacity, is_online, latitude, longitude, source_series_id,
        collection_region_id, withdrawn_at
      )
      SELECT $1, entry.source_event_id, entry.game, entry.venue_id, entry.title, entry.description,
        entry.starts_at, entry.ends_at, entry.timezone, entry.status, entry.format, entry.event_type,
        entry.source_url, entry.registration_url, entry.price_amount, entry.price_currency,
-       entry.capacity, entry.is_online, entry.latitude, entry.longitude,
+       entry.capacity, entry.is_online, entry.latitude, entry.longitude, entry.source_series_id,
        $3::uuid, NULL::timestamptz
      FROM jsonb_to_recordset($2::jsonb) AS entry(
        source_event_id text, game text, venue_id uuid, title text, description text,
        starts_at timestamptz, ends_at timestamptz, timezone text, status text, format text,
        event_type text, source_url text, registration_url text, price_amount numeric(10, 2),
        price_currency text, capacity integer, is_online boolean, latitude double precision,
-       longitude double precision, raw jsonb
+       longitude double precision, source_series_id text, raw jsonb
      )
      ON CONFLICT (source, source_event_id) DO UPDATE SET
        ${assignExcluded(EVENT_MUTABLE_COLUMNS)},

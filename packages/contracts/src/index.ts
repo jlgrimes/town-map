@@ -59,6 +59,13 @@ export type NormalizedVenue = z.infer<typeof VenueSchema>;
 
 export const NormalizedEventSchema = z.object({
   sourceEventId: z.string(),
+  /**
+   * Identifier for the recurring series this occurrence belongs to, when the
+   * upstream source publishes one. Authoritative where present; otherwise the
+   * series is derived from the occurrence's venue, game, format and local
+   * schedule.
+   */
+  sourceSeriesId: z.string().nullable().default(null),
   game: GameSchema,
   title: z.string().min(1),
   description: z.string().nullable().default(null),

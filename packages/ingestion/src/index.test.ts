@@ -27,6 +27,7 @@ afterEach(() => {
 
 function event(id: string): NormalizedEvent {
   return {
+    sourceSeriesId: null,
     sourceEventId: id,
     game: "magic",
     title: `Event ${id}`,

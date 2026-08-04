@@ -15,6 +15,7 @@ let refreshSourceEventCount: typeof import("./index.js").refreshSourceEventCount
 function event(index: number, overrides: Partial<NormalizedEvent> = {}): NormalizedEvent {
   return {
     sourceEventId: `event-${index}`,
+    sourceSeriesId: null,
     game: "magic",
     title: `Event ${index}`,
     description: null,

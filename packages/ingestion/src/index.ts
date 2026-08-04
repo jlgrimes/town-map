@@ -1,5 +1,6 @@
 import { NormalizedEventSchema, type EventSource, type NormalizedEvent } from "@town-map/contracts";
 import {
+  assignEventSeries,
   beginSync,
   claimNextCollectionRegion,
   closePool,
@@ -186,13 +187,20 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       eventsWithdrawn += regionEventsWithdrawn;
     }
 
-    // Once per run rather than once per region: the snapshot covers the whole
-    // source, so recomputing it after each region would repeat the same scan.
+    // Once per run rather than once per region: both cover the whole source, so
+    // repeating them per region would repeat the same scan.
     if (regionsProcessed > failures.length) {
       try {
         await refreshSourceEventCount(source);
       } catch (error) {
         failures.push(new Error(`refreshing ${source} event count`, { cause: error }));
+      }
+      // Grouping is derived from events already written, so a failure here
+      // leaves the collected events intact and is recoverable by re-running.
+      try {
+        await assignEventSeries(source);
+      } catch (error) {
+        failures.push(new Error(`assigning ${source} event series`, { cause: error }));
       }
     }
   } finally {

@@ -57,6 +57,7 @@ export function normalizePokemonEvent(row: PokedataEvent): NormalizedEvent {
 
   return {
     sourceEventId: row.guid,
+    sourceSeriesId: null,
     game: "pokemon",
     title: row.name,
     description: null,
