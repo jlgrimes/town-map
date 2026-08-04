@@ -493,42 +493,49 @@ function EventRow({
       onClick={() => onSelect(event.id)}
       onMouseEnter={() => onPreview(event.id)}
       onMouseLeave={() => onPreview(null)}
-      className={`p-3.5 sm:p-4 flex flex-col md:flex-row justify-between items-start md:items-center hover:bg-muted/40 rounded-xl cursor-pointer transition-colors border border-transparent ${active ? "bg-muted/70 border-border/50" : ""}`}
+      className="p-4 flex flex-col md:flex-row justify-between items-center hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl cursor-pointer"
     >
-      <div className="flex gap-3 items-center min-w-0 flex-1 w-full md:w-auto">
-        <time dateTime={event.startsAt} className="text-xs font-semibold tabular-nums text-muted-foreground w-14 shrink-0">
-          {timeLabel(event.startsAt)}
-        </time>
-        <div className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50 shrink-0">
-          <GameIcon game={event.game} className="size-7 object-contain" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="font-bold text-foreground text-sm leading-snug truncate">
+      <div className="flex gap-4 flex-col md:flex-row items-center min-w-0">
+        <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`}>
+          <div className="h-14 w-14 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center p-2 border border-neutral-200 dark:border-neutral-700 shrink-0">
+            <GameIcon game={event.game} className="size-10 object-contain" />
+          </div>
+        </motion.div>
+        <div className="min-w-0">
+          <motion.h3
+            layoutId={`title-${layoutIdPrefix}-${event.id}`}
+            className="font-medium text-neutral-800 dark:text-neutral-200 text-center md:text-left text-base"
+          >
             {event.title}
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+          </motion.h3>
+          <motion.p
+            layoutId={`description-${layoutIdPrefix}-${event.id}`}
+            className="text-neutral-600 dark:text-neutral-400 text-center md:text-left text-sm"
+          >
             {location || "Venue to be announced"}
-            {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : ""}
-          </p>
+          </motion.p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mt-2 md:mt-0 shrink-0 self-end md:self-center">
+      <div className="flex items-center gap-2 mt-4 md:mt-0 shrink-0">
         {event.sourceUrl ? (
-          <a
+          <motion.a
+            layoutId={`button-${layoutIdPrefix}-${event.id}`}
             href={event.sourceUrl}
             target="_blank"
             rel="noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="px-3 py-1.5 text-xs rounded-full font-bold bg-primary text-primary-foreground flex items-center gap-1.5 shrink-0 shadow-xs hover:bg-primary/90 transition-colors"
+            className="px-4 py-2 text-sm rounded-full font-bold bg-gray-100 hover:bg-green-500 hover:text-white text-black dark:bg-neutral-800 dark:text-white transition-colors"
           >
-            <span>Event Page</span>
-            <ExternalLink className="size-3" />
-          </a>
+            Event Page
+          </motion.a>
         ) : (
-          <div className="px-3 py-1.5 text-xs rounded-full font-medium bg-secondary text-secondary-foreground shrink-0">
-            <span>Event</span>
-          </div>
+          <motion.button
+            layoutId={`button-${layoutIdPrefix}-${event.id}`}
+            className="px-4 py-2 text-sm rounded-full font-bold bg-gray-100 hover:bg-green-500 hover:text-white text-black dark:bg-neutral-800 dark:text-white transition-colors"
+          >
+            Event
+          </motion.button>
         )}
 
         {canSave && (
