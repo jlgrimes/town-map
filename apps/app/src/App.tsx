@@ -127,7 +127,16 @@ function initialDateFilter(): DateFilter {
 function initialTab(authEnabled: boolean): Tab {
   if (!authEnabled) return "discover";
   const value = initialParams.get("tab");
-  return value === "discover" || value === "my-events" ? value : "my-events";
+  if (value === "discover" || value === "my-events") return value;
+  const hasDiscoveryParams =
+    initialParams.has("q") ||
+    initialParams.has("games") ||
+    initialParams.has("date") ||
+    initialParams.has("place") ||
+    initialParams.has("lat") ||
+    initialParams.has("lng") ||
+    initialParams.has("view");
+  return hasDiscoveryParams ? "discover" : "my-events";
 }
 
 function initialNumber(name: string, fallback: number) {
@@ -552,9 +561,12 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         setAccountGames(preferences.selectedGames);
         setPreferenceGamesDraft(preferences.selectedGames);
         setOnboardingCompleted(preferences.onboardingCompleted);
-        if (preferences.selectedGames.length > 0) setSelectedGames(preferences.selectedGames);
+        if (initialParams.get("games") === null && preferences.selectedGames.length > 0) {
+          setSelectedGames(preferences.selectedGames);
+        }
         if (preferences.homeAddress) setPlaceQuery(preferences.homeAddress);
-        if (preferences.homeAddress) {
+        const hasUrlLocation = initialParams.has("place") || (initialParams.has("lat") && initialParams.has("lng"));
+        if (preferences.homeAddress && !hasUrlLocation) {
           try {
             const result = await geocodePlace(preferences.homeAddress, controller.signal);
             if (controller.signal.aborted) return;
