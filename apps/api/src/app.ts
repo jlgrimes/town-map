@@ -97,16 +97,24 @@ export async function createApp(): Promise<FastifyInstance> {
     return auth.userId;
   }
 
+  // Reported by /health so "which code is actually running?" is answerable with
+  // one request. Railway injects the first of these; the others are fallbacks.
+  const revision = process.env.RAILWAY_GIT_COMMIT_SHA
+    ?? process.env.GIT_COMMIT_SHA
+    ?? process.env.SOURCE_COMMIT
+    ?? null;
+
   app.get("/health", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
+    const revisionField = { revision: revision?.slice(0, 12) ?? "unknown" };
     if (!process.env.DATABASE_URL) {
-      return reply.code(503).send({ status: "degraded", database: "not-configured" });
+      return reply.code(503).send({ status: "degraded", database: "not-configured", ...revisionField });
     }
     try {
       await getPool().query("SELECT 1");
-      return { status: "ok", database: "connected" };
+      return { status: "ok", database: "connected", ...revisionField };
     } catch {
-      return reply.code(503).send({ status: "degraded", database: "unavailable" });
+      return reply.code(503).send({ status: "degraded", database: "unavailable", ...revisionField });
     }
   });
 
