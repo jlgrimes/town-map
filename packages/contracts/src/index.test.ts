@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { CoverageResponseSchema, EventPageSchema, EventQuerySchema, GameSchema, SourceSchema, UserPreferencesSchema, UserPreferencesUpdateSchema } from "./index.js";
+import {
+  CoverageResponseSchema,
+  EventPageSchema,
+  EventQuerySchema,
+  GameSchema,
+  recurrenceLabel,
+  SourceSchema,
+  UserPreferencesSchema,
+  UserPreferencesUpdateSchema,
+} from "./index.js";
 
 describe("event API contracts", () => {
   it("requires latitude and longitude together", () => {
@@ -72,5 +81,33 @@ describe("event API contracts", () => {
       homeAddress: "Chicago, IL",
       selectedGames: [],
     }).success).toBe(false);
+  });
+});
+
+describe("recurrenceLabel", () => {
+  const series = (cadenceDays: number | null) => ({
+    id: "s1", cadenceDays, occurrenceCount: 5, nextStartsAt: null,
+  });
+
+  it("names the common intervals", () => {
+    expect(recurrenceLabel(series(1))).toBe("Repeats daily");
+    expect(recurrenceLabel(series(7))).toBe("Repeats weekly");
+    expect(recurrenceLabel(series(14))).toBe("Repeats fortnightly");
+  });
+
+  it("treats any month length as monthly", () => {
+    for (const days of [28, 30, 31]) {
+      expect(recurrenceLabel(series(days))).toBe("Repeats monthly");
+    }
+  });
+
+  it("falls back to a generic interval", () => {
+    expect(recurrenceLabel(series(21))).toBe("Repeats every 3 weeks");
+    expect(recurrenceLabel(series(5))).toBe("Repeats every 5 days");
+  });
+
+  it("says nothing when the cadence is not established", () => {
+    expect(recurrenceLabel(series(null))).toBeNull();
+    expect(recurrenceLabel(null)).toBeNull();
   });
 });

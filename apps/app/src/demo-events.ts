@@ -39,6 +39,8 @@ function event(
     status: "scheduled",
     format: null,
     eventType: "Local",
+    // Preview data is not grouped into series.
+    series: null,
     sourceUrl: "https://example.com/events/demo",
     registrationUrl: null,
     priceAmount: null,

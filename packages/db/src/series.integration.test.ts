@@ -277,6 +277,36 @@ integration("recurring event series", () => {
     expect(await seriesRows()).toHaveLength(2);
   });
 
+  it("surfaces the series on each event the read API returns", async () => {
+    const { listEvents } = await import("./index.js");
+    const upcoming = [1, 2, 3, 4].map((week) =>
+      event(`fnm-${week}`, new Date(Date.now() + week * 7 * 86_400_000).toISOString()));
+    await upsertEvents("wotc-locator", upcoming);
+    await assignEventSeries("wotc-locator");
+
+    const page = await listEvents({ games: [], radiusMiles: 50, limit: 50 }, client as never);
+
+    expect(page.events).toHaveLength(4);
+    const [first] = page.events;
+    expect(first.series).not.toBeNull();
+    expect(first.series!.cadenceDays).toBe(7);
+    expect(first.series!.occurrenceCount).toBe(4);
+    // Every occurrence points at the same series.
+    expect(new Set(page.events.map((item) => item.series!.id)).size).toBe(1);
+  });
+
+  it("reports no series for an event that belongs to none", async () => {
+    const { listEvents } = await import("./index.js");
+    await upsertEvents("wotc-locator", [
+      event("lonely", new Date(Date.now() + 86_400_000).toISOString(), { venue: null }),
+    ]);
+    await assignEventSeries("wotc-locator");
+
+    const page = await listEvents({ games: [], radiusMiles: 50, limit: 10 }, client as never);
+
+    expect(page.events[0].series).toBeNull();
+  });
+
   it("records the next upcoming occurrence", async () => {
     const past = new Date(Date.now() - 7 * 86_400_000).toISOString();
     const soon = new Date(Date.now() + 7 * 86_400_000).toISOString();

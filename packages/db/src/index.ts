@@ -926,6 +926,10 @@ export async function upsertEvent(source: EventSource, event: NormalizedEvent) {
 type EventRow = Omit<EventListItem, "distanceMiles" | "venue"> & {
   distanceMeters: number | null;
   cursorStartsAt: string;
+  seriesId: string | null;
+  seriesCadenceDays: number | null;
+  seriesOccurrenceCount: number | null;
+  seriesNextStartsAt: Date | null;
   priceAmount: string | null;
   venueName: string | null;
   venueAddress: string | null;
@@ -1044,7 +1048,16 @@ const venueColumns = `
   v.latitude AS "venueLatitude", v.longitude AS "venueLongitude",
   v.website AS "venueWebsite"`;
 
-const eventSelect = `${eventColumns},${venueColumns}`;
+/**
+ * Joined only after the page limit has been applied, so this is a primary-key
+ * lookup for at most `limit` rows rather than work across the candidate set.
+ */
+const seriesColumns = `
+  s.id AS "seriesId", s.cadence_days AS "seriesCadenceDays",
+  s.occurrence_count AS "seriesOccurrenceCount",
+  s.next_starts_at AS "seriesNextStartsAt"`;
+
+const eventSelect = `${eventColumns},${venueColumns},${seriesColumns}`;
 
 function toEventListItem(row: EventRow): EventListItem {
   return {
@@ -1067,6 +1080,12 @@ function toEventListItem(row: EventRow): EventListItem {
     capacity: row.capacity,
     isOnline: row.isOnline,
     distanceMiles: row.distanceMeters === null ? null : Math.round((row.distanceMeters / METERS_PER_MILE) * 10) / 10,
+    series: row.seriesId ? {
+      id: row.seriesId,
+      cadenceDays: row.seriesCadenceDays,
+      occurrenceCount: row.seriesOccurrenceCount ?? 0,
+      nextStartsAt: row.seriesNextStartsAt?.toISOString() ?? null,
+    } : null,
     venue: row.venueName ? {
       name: row.venueName,
       address: row.venueAddress,
@@ -1159,6 +1178,7 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
     FROM page
     JOIN events e ON e.id = page.id
     LEFT JOIN venues v ON v.id = page.venue_id
+    LEFT JOIN event_series s ON s.id = e.series_id
     ORDER BY page."distanceMeters" ASC, page."startsAt" ASC, page.id ASC`;
   } else {
     if (cursor) {
@@ -1168,6 +1188,7 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
     sql = `SELECT ${eventSelect}, ${CURSOR_STARTS_AT}, NULL::double precision AS "distanceMeters"
       FROM events e
       LEFT JOIN venues v ON v.id = e.venue_id
+      LEFT JOIN event_series s ON s.id = e.series_id
       WHERE ${conditions.join(" AND ")}
       ORDER BY e.starts_at ASC, e.id ASC
       LIMIT ${limit}`;

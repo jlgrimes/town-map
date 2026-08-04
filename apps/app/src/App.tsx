@@ -1,5 +1,6 @@
 import { Geolocation } from "@capacitor/geolocation";
 import { SignInButton, UserButton } from "@clerk/react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -19,7 +20,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { type EventListItem, type Game } from "@town-map/contracts";
+import { recurrenceLabel, type EventListItem, type Game } from "@town-map/contracts";
 import {
   ChevronDown,
   CircleAlert,
@@ -287,6 +288,7 @@ function EventRow({
     event.venue?.region,
     event.venue?.postalCode,
   ].filter(Boolean).join(", ");
+  const recurrence = recurrenceLabel(event.series);
 
   return (
     <li
@@ -340,6 +342,11 @@ function EventRow({
           </p>
           {details.length > 0 && (
             <p className="mt-1 text-xs text-muted-foreground">{details.join(" · ")}</p>
+          )}
+          {recurrence && (
+            <p className="mt-1.5">
+              <Badge variant="secondary" className="font-normal">{recurrence}</Badge>
+            </p>
           )}
         </div>
       </article>

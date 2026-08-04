@@ -86,6 +86,21 @@ export const NormalizedEventSchema = z.object({
 });
 export type NormalizedEvent = z.infer<typeof NormalizedEventSchema>;
 
+/**
+ * The recurring series an event belongs to, when it belongs to one.
+ *
+ * `cadenceDays` stays null until the series has been observed often enough to
+ * assert an interval, so a client can distinguish "known to repeat weekly" from
+ * "grouped, but the schedule is not established yet".
+ */
+export const EventSeriesSummarySchema = z.object({
+  id: z.string(),
+  cadenceDays: z.number().int().positive().nullable(),
+  occurrenceCount: z.number().int().nonnegative(),
+  nextStartsAt: z.string().datetime().nullable(),
+});
+export type EventSeriesSummary = z.infer<typeof EventSeriesSummarySchema>;
+
 export const EventListItemSchema = z.object({
   id: z.string(),
   source: SourceSchema,
@@ -106,6 +121,7 @@ export const EventListItemSchema = z.object({
   capacity: z.number().int().nullable(),
   isOnline: z.boolean(),
   distanceMiles: z.number().nullable(),
+  series: EventSeriesSummarySchema.nullable(),
   venue: VenueSchema.pick({
     name: true,
     address: true,
@@ -218,6 +234,24 @@ export const UserPreferencesSchema = z.object({
   onboardingCompleted: z.boolean(),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
+
+/**
+ * How a series' observed cadence reads to a person, or null when there is not
+ * enough evidence to describe one.
+ *
+ * Intervals are matched with tolerance because a store that runs "every month"
+ * lands on 28, 30 or 31 days depending on the month.
+ */
+export function recurrenceLabel(series: EventSeriesSummary | null): string | null {
+  const days = series?.cadenceDays;
+  if (!days) return null;
+  if (days === 1) return "Repeats daily";
+  if (days === 7) return "Repeats weekly";
+  if (days === 14) return "Repeats fortnightly";
+  if (days >= 28 && days <= 31) return "Repeats monthly";
+  if (days % 7 === 0) return `Repeats every ${days / 7} weeks`;
+  return `Repeats every ${days} days`;
+}
 
 /**
  * Fallback label for a slug the client has no registry entry for, so an event
