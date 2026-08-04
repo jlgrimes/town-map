@@ -72,7 +72,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Routes, Route, Link, useNavigate } from "react-router-dom";
+import { Routes, Route, Link, useNavigate, useLocation } from "react-router-dom";
 import {
   fetchEvents,
   fetchSavedEvents,
@@ -453,7 +453,44 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [expandedLayoutIdPrefix, setExpandedLayoutIdPrefix] = useState<string>("discover");
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>(() => initialTab(auth.enabled));
+  const locationHook = useLocation();
+  const navigate = useNavigate();
+
+  const tab: Tab = useMemo(() => {
+    const pathname = locationHook.pathname;
+    if (pathname === "/my-events") return "my-events";
+    if (pathname === "/preferences") return "preferences";
+    if (pathname === "/discover") return "discover";
+    return initialTab(auth.enabled);
+  }, [locationHook.pathname, auth.enabled]);
+
+  const setTab = useCallback(
+    (targetTab: Tab) => {
+      const targetPath = targetTab === "discover" ? "/discover" : `/${targetTab}`;
+      if (locationHook.pathname !== targetPath) {
+        navigate(`${targetPath}${locationHook.search}${locationHook.hash}`);
+      }
+    },
+    [locationHook.pathname, locationHook.search, locationHook.hash, navigate],
+  );
+
+  useEffect(() => {
+    const pathname = locationHook.pathname;
+    if (pathname === "/" || pathname === "") {
+      const targetPath = tab === "discover" ? "/discover" : `/${tab}`;
+      navigate(`${targetPath}${locationHook.search}${locationHook.hash}`, { replace: true });
+    } else {
+      const params = new URLSearchParams(locationHook.search);
+      const legacyTab = params.get("tab");
+      if (legacyTab && (legacyTab === "discover" || legacyTab === "my-events" || legacyTab === "preferences")) {
+        const targetPath = legacyTab === "discover" ? "/discover" : `/${legacyTab}`;
+        params.delete("tab");
+        const nextSearch = params.toString() ? `?${params.toString()}` : "";
+        navigate(`${targetPath}${nextSearch}${locationHook.hash}`, { replace: true });
+      }
+    }
+  }, [locationHook.pathname, locationHook.search, locationHook.hash, navigate, tab]);
+
   const [savedEvents, setSavedEvents] = useState<EventListItem[]>([]);
   const [savedStatus, setSavedStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
@@ -627,7 +664,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
 
   useEffect(() => {
     const params = new URLSearchParams();
-    if (auth.enabled) params.set("tab", tab);
     if (selectedGames.length !== catalog.ids.length) params.set("games", selectedGames.join(","));
     if (query) params.set("q", query);
     if (dateFilter !== "all") params.set("date", dateFilter);
@@ -639,7 +675,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     params.set("place", locationLabel);
     const nextUrl = `${window.location.pathname}?${params}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [auth.enabled, catalog.ids.length, dateFilter, location, locationLabel, priceFilter, query, radiusMiles, selectedGames, tab, viewMode]);
+  }, [catalog.ids.length, dateFilter, location, locationLabel, priceFilter, query, radiusMiles, selectedGames, viewMode]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
