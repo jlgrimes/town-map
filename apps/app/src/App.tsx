@@ -593,9 +593,14 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setOnboardingCompleted(preferences.onboardingCompleted);
       setPreferenceStatus("ready");
       setPreferencesEditorOpen(false);
-    } catch {
+    } catch (error) {
+      // Logged as well as shown: the surfaced text is deliberately short, and
+      // the underlying error is what makes a failure diagnosable at all.
+      console.error("Saving preferences failed", error);
       setPreferenceStatus("error");
-      setHomeNotice("We couldn't save your preferences right now. Please try again.");
+      setHomeNotice(error instanceof Error && error.message
+        ? `We couldn't save your preferences: ${error.message}`
+        : "We couldn't save your preferences right now. Please try again.");
       return;
     }
 

@@ -119,6 +119,21 @@ export async function fetchUserPreferences(
   return normalizeUserPreferences(await response.json());
 }
 
+/**
+ * Pulls the API's own error message out of a failed response.
+ *
+ * Without it every failure reads the same to the user and to whoever is
+ * debugging, whatever actually went wrong.
+ */
+async function errorDetail(response: Response) {
+  try {
+    const body = await response.json() as { error?: unknown };
+    return typeof body.error === "string" ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function saveUserPreferences(
   preferences: { homeAddress: string; selectedGames: Game[] },
   getToken: () => Promise<string | null>,
@@ -128,6 +143,9 @@ export async function saveUserPreferences(
     headers: await authorizationHeaders(getToken),
     body: JSON.stringify(preferences),
   });
-  if (!response.ok) throw new Error(`Preferences API returned ${response.status}`);
+  if (!response.ok) {
+    const detail = await errorDetail(response);
+    throw new Error(detail ?? `Preferences API returned ${response.status}`);
+  }
   return UserPreferencesSchema.parse(await response.json());
 }
