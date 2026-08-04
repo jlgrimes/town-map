@@ -148,20 +148,19 @@ export function ExpandableEventCardModal({
 
           {/* Aceternity Expanded Card Container */}
           <motion.div
-            layoutId={`card-${layoutIdPrefix}-${event.id}`}
             ref={ref}
-            transition={{ type: "spring", stiffness: 350, damping: 30 }}
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 12 }}
+            transition={{ type: "spring", stiffness: 350, damping: 28 }}
             className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-border bg-card text-card-foreground shadow-2xl"
           >
             {/* Header with game info and close button */}
             <div className="relative flex items-center justify-between border-b bg-muted/40 px-6 py-5">
               <div className="flex items-center gap-3">
-                <motion.div
-                  layoutId={`game-icon-${layoutIdPrefix}-${event.id}`}
-                  className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50"
-                >
+                <div className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50">
                   <GameIcon game={event.game} className="size-7 object-contain" />
-                </motion.div>
+                </div>
                 <div>
                   <Badge variant="secondary" className="font-medium">
                     {catalog.label(event.game)}
@@ -185,20 +184,11 @@ export function ExpandableEventCardModal({
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
               {/* Title & Timing */}
               <div>
-                <motion.h3
-                  layoutId={`title-${layoutIdPrefix}-${event.id}`}
-                  className="text-2xl font-bold tracking-tight text-foreground"
-                >
+                <Typography variant="h1" as="h2">
                   {event.title}
-                </motion.h3>
+                </Typography>
 
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2, delay: 0.05 }}
-                  className="mt-3 flex flex-wrap items-center gap-4"
-                >
+                <div className="mt-3 flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
                     <Calendar className="size-4 text-primary" />
                     <Typography variant="body" as="span" className="font-medium">
@@ -211,17 +201,11 @@ export function ExpandableEventCardModal({
                       {timeFormatted}
                     </Typography>
                   </div>
-                </motion.div>
+                </div>
               </div>
 
               {/* Venue / Location Details & Extra Metadata */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2, delay: 0.08 }}
-                className="space-y-6"
-              >
+              <div className="space-y-6">
                 <div className="rounded-2xl border bg-muted/20 p-4 space-y-2">
                   <div className="flex items-start gap-2.5">
                     <MapPin className="size-5 shrink-0 text-primary mt-0.5" />
@@ -276,17 +260,11 @@ export function ExpandableEventCardModal({
                     ))}
                   </div>
                 </div>
-              </motion.div>
+              </div>
             </div>
 
             {/* Footer with Links & Actions */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, delay: 0.1 }}
-              className="border-t bg-muted/30 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3"
-            >
+            <div className="border-t bg-muted/30 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 flex-1">
                 {event.sourceUrl && (
                   <a
@@ -333,11 +311,10 @@ export function ExpandableEventCardModal({
                   )}
                 </Button>
               )}
-            </motion.div>
+            </div>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
   );
 }
-

@@ -485,8 +485,7 @@ function EventRow({
   const recurrence = recurrenceLabel(event.series);
 
   return (
-    <motion.li
-      layoutId={`card-${layoutIdPrefix}-${event.id}`}
+    <li
       id={`event-${event.id}`}
       className={`scroll-mt-4 cursor-pointer px-3 py-3.5 transition-colors sm:px-4 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
       onMouseEnter={() => onPreview(event.id)}
@@ -504,12 +503,10 @@ function EventRow({
 
         <div className="min-w-0">
           <div className="flex items-start gap-2">
-            <motion.div layoutId={`game-icon-${layoutIdPrefix}-${event.id}`} className="shrink-0">
-              <GameIcon game={event.game} className="size-5 object-contain mt-0.5" />
-            </motion.div>
-            <motion.h3 layoutId={`title-${layoutIdPrefix}-${event.id}`} className="min-w-0 text-base leading-snug font-semibold tracking-tight text-foreground">
+            <GameIcon game={event.game} className="size-5 shrink-0 object-contain mt-0.5" />
+            <Typography variant="h3" as="h3" className="min-w-0">
               {event.title}
-            </motion.h3>
+            </Typography>
           </div>
           <Typography variant="body-muted" className="mt-1">
             <span className="text-foreground font-medium">{location || "Venue to be announced"}</span>
@@ -547,7 +544,7 @@ function EventRow({
           </Button>
         )}
       </article>
-    </motion.li>
+    </li>
   );
 }
 
