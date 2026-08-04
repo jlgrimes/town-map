@@ -82,6 +82,11 @@ import { demoEvents } from "./demo-events";
 import { GameIcon } from "./GameIcon";
 import { useGameCatalog, type GameCatalog } from "./games";
 import { ExpandableEventCardModal } from "@/components/ui/expandable-card";
+import { AnimatedTabs } from "@/components/ui/animated-tabs";
+import { SpotlightSearch } from "@/components/ui/spotlight-search";
+import { DotBackground } from "@/components/ui/dot-background";
+import { AnimatedTooltip } from "@/components/ui/animated-tooltip";
+import { MovingBorderCard } from "@/components/ui/moving-border";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -273,15 +278,17 @@ function UserFooterMenu({ auth, setTab }: { auth: AppAuth; setTab: (tab: Tab) =>
 function AccountSettingsCard() {
   const clerk = useClerk();
   return (
-    <div className="rounded-xl border bg-card p-5 shadow-xs flex items-center justify-between gap-4">
-      <div>
-        <h3 className="font-semibold text-sm">Account settings</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">Manage your user profile, email addresses, and security settings via Clerk.</p>
+    <MovingBorderCard containerClassName="max-w-xl">
+      <div className="p-5 flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-semibold text-sm">Account settings</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Manage your user profile, email addresses, and security settings via Clerk.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => clerk.openUserProfile()}>
+          Manage account
+        </Button>
       </div>
-      <Button variant="outline" size="sm" onClick={() => clerk.openUserProfile()}>
-        Manage account
-      </Button>
-    </div>
+    </MovingBorderCard>
   );
 }
 
@@ -378,24 +385,24 @@ function GameFilters({ value, onChange, catalog }: { value: Game[]; onChange: (g
   }
 
   return (
-    <fieldset className="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Games">
+    <fieldset className="flex min-w-0 items-center gap-1 overflow-x-auto py-1" aria-label="Games">
       <legend className="sr-only">Games</legend>
       {catalog.ids.map((game) => {
         const selected = value.includes(game);
         return (
-          <Button
-            key={game}
-            type="button"
-            variant={selected ? "secondary" : "ghost"}
-            size="icon"
-            className={`size-11 ${selected ? "ring-1 ring-primary/40" : "opacity-45"}`}
-            aria-label={`${selected ? "Exclude" : "Include"} ${catalog.label(game)} events`}
-            aria-pressed={selected}
-            title={catalog.label(game)}
-            onClick={() => toggleGame(game)}
-          >
-            <GameIcon game={game} className="size-6 object-contain" decorative />
-          </Button>
+          <AnimatedTooltip key={game} title={catalog.label(game)}>
+            <Button
+              type="button"
+              variant={selected ? "secondary" : "ghost"}
+              size="icon"
+              className={`size-10 ${selected ? "ring-1 ring-primary/40" : "opacity-45 hover:opacity-100"}`}
+              aria-label={`${selected ? "Exclude" : "Include"} ${catalog.label(game)} events`}
+              aria-pressed={selected}
+              onClick={() => toggleGame(game)}
+            >
+              <GameIcon game={game} className="size-5 object-contain" decorative />
+            </Button>
+          </AnimatedTooltip>
         );
       })}
     </fieldset>
@@ -433,22 +440,20 @@ function GamePreferencePicker({ value, onChange, catalog }: { value: Game[]; onC
 }
 
 function DateFilters({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {
+  const options = DATE_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: opt.value === "all" ? "Any date" : opt.value === "week" ? "This week" : opt.label,
+  }));
+
   return (
-    <fieldset className="flex min-w-max items-center gap-1" aria-label="Date">
-      <legend className="sr-only">Date</legend>
-      {DATE_OPTIONS.map((option) => (
-        <Button
-          key={option.value}
-          type="button"
-          variant={value === option.value ? "secondary" : "ghost"}
-          className={`min-h-11 px-3 ${value === option.value ? "ring-1 ring-primary/40" : ""}`}
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-        >
-          {option.value === "all" ? "Any date" : option.value === "week" ? "This week" : option.label}
-        </Button>
-      ))}
-    </fieldset>
+    <div aria-label="Date filter">
+      <AnimatedTabs
+        options={options}
+        value={value}
+        onChange={onChange}
+        layoutId="date-filter-pill"
+      />
+    </div>
   );
 }
 
@@ -1236,18 +1241,20 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                 <>
                   <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
                     <div className={`grid gap-2 ${auth.loaded && !auth.signedIn ? "sm:grid-cols-[minmax(0,1fr)_auto]" : ""}`}>
-                      <div className="relative">
-                        <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
-                        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id="event-search"
-                          value={query}
-                          onChange={(event) => setQuery(event.target.value)}
-                          placeholder="Search events or venues"
-                          className="h-11 pr-11 pl-10"
-                        />
-                        {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
-                      </div>
+                      <SpotlightSearch className="w-full">
+                        <div className="relative">
+                          <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
+                          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground z-20" />
+                          <Input
+                            id="event-search"
+                            value={query}
+                            onChange={(event) => setQuery(event.target.value)}
+                            placeholder="Search events or venues"
+                            className="h-11 pr-11 pl-10"
+                          />
+                          {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
+                        </div>
+                      </SpotlightSearch>
 
                       {auth.loaded && !auth.signedIn && (
                         <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
@@ -1332,8 +1339,15 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                         {status === "preview" ? " · preview data" : ""}
                       </p>
                       <div className="flex lg:hidden" aria-label="Choose results view">
-                        <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"}><List /> List</Button>
-                        <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("map")} aria-pressed={viewMode === "map"}><MapIcon /> Map</Button>
+                        <AnimatedTabs
+                          options={[
+                            { value: "list", label: <span className="flex items-center gap-1.5"><List className="size-3.5" /> List</span> },
+                            { value: "map", label: <span className="flex items-center gap-1.5"><MapIcon className="size-3.5" /> Map</span> },
+                          ]}
+                          value={viewMode}
+                          onChange={setViewMode}
+                          layoutId="view-mode-pill"
+                        />
                       </div>
                     </div>
 
@@ -1342,14 +1356,16 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                         {status === "loading" ? (
                           <LoadingCards />
                         ) : visibleEvents.length === 0 ? (
-                          <Empty className="border-b py-16">
-                            <EmptyHeader>
-                              <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
-                              <EmptyTitle>{emptyState.title}</EmptyTitle>
-                              <EmptyDescription>{emptyState.description}</EmptyDescription>
-                            </EmptyHeader>
-                            <EmptyContent><Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button></EmptyContent>
-                          </Empty>
+                          <DotBackground className="rounded-2xl border my-4">
+                            <Empty className="py-12 border-none">
+                              <EmptyHeader>
+                                <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
+                                <EmptyTitle>{emptyState.title}</EmptyTitle>
+                                <EmptyDescription>{emptyState.description}</EmptyDescription>
+                              </EmptyHeader>
+                              <EmptyContent><Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button></EmptyContent>
+                            </Empty>
+                          </DotBackground>
                         ) : (
                           <>
                             <div className="border-b" aria-label="Event results">
