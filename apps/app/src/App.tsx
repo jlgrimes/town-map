@@ -968,7 +968,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             <SidebarHeader>
               <div className="flex h-12 items-center gap-2.5 px-2">
                 <img src="/town-map.png" alt="Town Map logo" className="size-8 object-contain shrink-0" />
-                <span className="font-bold text-sm leading-tight tracking-tight group-data-[collapsible=icon]:hidden">Town Map</span>
+                <span className="font-semibold text-sm group-data-[collapsible=icon]:hidden">Town Map</span>
               </div>
             </SidebarHeader>
 
