@@ -1,6 +1,7 @@
 import { ClerkProvider, useAuth } from "@clerk/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import { App, type AppAuth } from "./App";
 import "./styles.css";
 
@@ -17,10 +18,16 @@ function ClerkApp() {
   return <App auth={auth} />;
 }
 
-const application = clerkPublishableKey ? (
-  <ClerkProvider publishableKey={clerkPublishableKey} afterSignOutUrl="/">
-    <ClerkApp />
-  </ClerkProvider>
-) : <App />;
+const application = (
+  <BrowserRouter>
+    {clerkPublishableKey ? (
+      <ClerkProvider publishableKey={clerkPublishableKey} afterSignOutUrl="/">
+        <ClerkApp />
+      </ClerkProvider>
+    ) : (
+      <App />
+    )}
+  </BrowserRouter>
+);
 
 createRoot(document.getElementById("root")!).render(<StrictMode>{application}</StrictMode>);

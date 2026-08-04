@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { type EventListItem } from "@town-map/contracts";
 import { Badge } from "@/components/ui/badge";
@@ -6,9 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Typography } from "@/components/ui/typography";
 import { GameIcon } from "@/GameIcon";
 import { useGameCatalog } from "@/games";
+import { slugifyShop } from "@/lib/shop-utils";
 import {
   Bookmark,
   BookmarkCheck,
+  Building2,
   Calendar,
   Clock,
   MapPin,
@@ -231,24 +234,37 @@ export function ExpandableEventCardModal({
                     </div>
 
                     <div className="w-full rounded-2xl border bg-neutral-50 dark:bg-neutral-800/50 p-4 space-y-2">
-                      <div className="flex items-start gap-2.5">
-                        <MapPin className="size-4 shrink-0 text-primary mt-0.5" />
-                        <div>
-                          <Typography variant="h3" as="h4">
-                            {event.venue?.name || "Venue to be announced"}
-                          </Typography>
-                          {fullAddress && (
-                            <Typography variant="caption" className="mt-0.5 block leading-relaxed">
-                              {fullAddress}
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-start gap-2.5">
+                          <MapPin className="size-4 shrink-0 text-primary mt-0.5" />
+                          <div>
+                            <Typography variant="h3" as="h4">
+                              {event.venue?.name || "Venue to be announced"}
                             </Typography>
-                          )}
-                          {event.distanceMiles !== null && (
-                            <Typography variant="caption" className="mt-1 flex items-center font-medium">
-                              <Navigation className="inline size-3 mr-1 text-primary" />
-                              {event.distanceMiles} miles away
-                            </Typography>
-                          )}
+                            {fullAddress && (
+                              <Typography variant="caption" className="mt-0.5 block leading-relaxed">
+                                {fullAddress}
+                              </Typography>
+                            )}
+                            {event.distanceMiles !== null && (
+                              <Typography variant="caption" className="mt-1 flex items-center font-medium">
+                                <Navigation className="inline size-3 mr-1 text-primary" />
+                                {event.distanceMiles} miles away
+                              </Typography>
+                            )}
+                          </div>
                         </div>
+
+                        {event.venue?.name && (
+                          <Link
+                            to={`/shop/${slugifyShop(event.venue.name, event.venue.city)}`}
+                            onClick={() => onClose()}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline shrink-0 bg-background border rounded-lg px-2.5 py-1 shadow-xs"
+                          >
+                            <span>Shop Page</span>
+                            <Building2 className="size-3" />
+                          </Link>
+                        )}
                       </div>
                     </div>
 

@@ -71,6 +71,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import {
   fetchEvents,
   fetchSavedEvents,
@@ -88,6 +89,8 @@ import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { SpotlightSearch } from "@/components/ui/spotlight-search";
 import { DotBackground } from "@/components/ui/dot-background";
 import { Typography } from "@/components/ui/typography";
+import { ShopDetailPage } from "@/components/shop/ShopDetailPage";
+import { slugifyShop } from "@/lib/shop-utils";
 import {
   DATE_OPTIONS,
   DEFAULT_RADIUS_MILES,
@@ -495,7 +498,18 @@ function EventRow({
             {event.title}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5 truncate">
-            {location || "Venue to be announced"}
+            {event.venue?.name ? (
+              <Link
+                to={`/shop/${slugifyShop(event.venue.name, event.venue.city)}`}
+                onClick={(e) => e.stopPropagation()}
+                className="hover:underline hover:text-primary transition-colors font-medium text-foreground/80"
+              >
+                {event.venue.name}
+              </Link>
+            ) : (
+              "Venue to be announced"
+            )}
+            {event.venue?.city ? ` · ${event.venue.city}` : ""}
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : ""}
           </p>
         </motion.div>
@@ -965,8 +979,23 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   };
 
   return (
-    <TooltipProvider>
-      <SidebarProvider defaultOpen={true}>
+    <Routes>
+      <Route
+        path="/shop/:shopSlug"
+        element={
+          <ShopDetailPage
+            events={events}
+            savedEventIds={savedIds}
+            onToggleSave={toggleSaved}
+            catalog={catalog}
+          />
+        }
+      />
+      <Route
+        path="*"
+        element={
+          <TooltipProvider>
+            <SidebarProvider defaultOpen={true}>
         <div className="flex min-h-svh w-full bg-background text-foreground">
           <Sidebar collapsible="icon">
             <SidebarHeader>
@@ -1486,5 +1515,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         recurrenceLabel={recurrenceLabel}
       />
     </TooltipProvider>
+        }
+      />
+    </Routes>
   );
 }
