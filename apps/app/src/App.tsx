@@ -809,59 +809,42 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         Skip to events
       </a>
 
-      {auth.enabled && auth.loaded && auth.signedIn && (!preferencesReady || !onboardingCompleted) && (
+      {auth.enabled && auth.loaded && auth.signedIn && preferencesReady && !onboardingCompleted && (
         <div className="fixed inset-0 z-[100] overflow-y-auto bg-background/95 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
           <div className="mx-auto flex min-h-full max-w-lg items-center justify-center">
             <div className="w-full rounded-xl border bg-card p-5 text-card-foreground shadow-xl sm:p-7">
-              {!preferencesReady ? (
-                <div className="py-8 text-center">
-                  <img src="/town-map.png" alt="" className="mx-auto size-12 object-contain" />
-                  <h2 id="onboarding-title" className="mt-4 text-lg font-semibold">
-                    {preferenceStatus === "error" ? "We couldn't load your preferences" : "Loading your preferences…"}
-                  </h2>
-                  {preferenceStatus === "error" && (
-                    <>
-                      <p className="mt-2 text-sm text-muted-foreground">Check your connection and try again.</p>
-                      <Button className="mt-5" onClick={() => setPreferencesReloadKey((value) => value + 1)}>Try again</Button>
-                    </>
-                  )}
+              <div className="flex items-center gap-3">
+                <img src="/town-map.png" alt="" className="size-11 object-contain" />
+                <div>
+                  <h2 id="onboarding-title" className="text-lg font-semibold">Find tournaments near you</h2>
+                  <p className="text-sm text-muted-foreground">Tell us where to look and which games you play.</p>
                 </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-3">
-                    <img src="/town-map.png" alt="" className="size-11 object-contain" />
-                    <div>
-                      <h2 id="onboarding-title" className="text-lg font-semibold">Find tournaments near you</h2>
-                      <p className="text-sm text-muted-foreground">Tell us where to look and which games you play.</p>
-                    </div>
-                  </div>
-                  <form onSubmit={saveAccountPreferences} className="mt-6 space-y-5">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="onboarding-home">Home area</Label>
-                      <Input
-                        id="onboarding-home"
-                        value={homeDraft}
-                        onChange={(event) => setHomeDraft(event.target.value)}
-                        placeholder="Chicago, IL or 60614"
-                        autoComplete="street-address"
-                        className="h-11"
-                        autoFocus
-                      />
-                      <p className="text-xs text-muted-foreground">A city, ZIP code, or full address works.</p>
-                    </div>
-                    <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
-                    {preferenceGamesDraft.length === 0 && <p className="text-xs text-muted-foreground">Choose at least one game.</p>}
-                    {homeNotice && <p role="status" className="text-sm text-destructive">{homeNotice}</p>}
-                    <Button
-                      type="submit"
-                      className="h-11 w-full"
-                      disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving"}
-                    >
-                      {preferenceStatus === "saving" ? "Saving…" : "Show nearby tournaments"}
-                    </Button>
-                  </form>
-                </>
-              )}
+              </div>
+              <form onSubmit={saveAccountPreferences} className="mt-6 space-y-5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="onboarding-home">Home area</Label>
+                  <Input
+                    id="onboarding-home"
+                    value={homeDraft}
+                    onChange={(event) => setHomeDraft(event.target.value)}
+                    placeholder="Chicago, IL or 60614"
+                    autoComplete="street-address"
+                    className="h-11"
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground">A city, ZIP code, or full address works.</p>
+                </div>
+                <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
+                {preferenceGamesDraft.length === 0 && <p className="text-xs text-muted-foreground">Choose at least one game.</p>}
+                {homeNotice && <p role="status" className="text-sm text-destructive">{homeNotice}</p>}
+                <Button
+                  type="submit"
+                  className="h-11 w-full"
+                  disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving"}
+                >
+                  {preferenceStatus === "saving" ? "Saving…" : "Show nearby tournaments"}
+                </Button>
+              </form>
             </div>
           </div>
         </div>
@@ -873,9 +856,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             <img src="/town-map.png" alt="" className="size-8 object-contain" />
             <span>Town Map</span>
           </a>
-          {auth.enabled && auth.loaded && (
+          {auth.enabled && (
             <div className="ml-auto flex items-center gap-1">
-              {auth.signedIn ? (
+              {!auth.loaded ? (
+                <div className="h-9 w-20 animate-pulse rounded-md bg-muted" />
+              ) : auth.signedIn ? (
                 <>
                   <Popover open={preferencesEditorOpen} onOpenChange={(open) => {
                     setPreferencesEditorOpen(open);
@@ -985,7 +970,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             )}
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              {!canSave ? (
+              {!auth.loaded || (auth.signedIn && (savedStatus === "loading" || !preferencesReady)) ? (
+                <LoadingCards />
+              ) : !canSave ? (
                 <Empty className="py-16">
                   <EmptyHeader>
                     <EmptyMedia variant="icon"><Bookmark /></EmptyMedia>
@@ -999,8 +986,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                     <Button variant="outline" className="min-h-11 px-4" onClick={() => setTab("discover")}>Browse events</Button>
                   </EmptyContent>
                 </Empty>
-              ) : savedStatus === "loading" ? (
-                <LoadingCards />
               ) : savedStatus === "error" ? (
                 <Empty className="py-16">
                   <EmptyHeader>
@@ -1060,7 +1045,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         ) : (
         <>
         <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
-          <div className={`grid gap-2 ${auth.signedIn ? "" : "sm:grid-cols-[minmax(0,1fr)_auto]"}`}>
+          <div className={`grid gap-2 ${auth.loaded && !auth.signedIn ? "sm:grid-cols-[minmax(0,1fr)_auto]" : ""}`}>
             <div className="relative">
               <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -1074,7 +1059,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
             </div>
 
-            {!auth.signedIn && (
+            {auth.loaded && !auth.signedIn && (
               <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="h-11 w-full justify-between gap-2 px-3 font-normal sm:w-auto sm:max-w-72">
@@ -1127,7 +1112,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               <DateFilters value={dateFilter} onChange={setDateFilter} />
             </div>
             <div className="flex items-center justify-between gap-2 sm:justify-end">
-              {!auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} catalog={catalog} />}
+              {auth.loaded && !auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} catalog={catalog} />}
               <div>
                 <Label htmlFor="radius" className="sr-only">Search radius</Label>
                 <select
