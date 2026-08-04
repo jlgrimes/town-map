@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useId } from "react";
+import React, { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { type EventListItem } from "@town-map/contracts";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,6 @@ import {
   Clock,
   MapPin,
   Tag,
-  X,
   Navigation,
   DollarSign,
   Users,
@@ -67,7 +66,6 @@ export function ExpandableEventCardModal({
 }: ExpandableEventCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const catalog = useGameCatalog();
-  const id = useId();
 
   useOutsideClick(ref, () => onClose());
 
@@ -147,23 +145,11 @@ export function ExpandableEventCardModal({
       </AnimatePresence>
       <AnimatePresence>
         {event ? (
-          <div className="fixed inset-0 grid place-items-center z-50 p-4 sm:p-6">
-            <motion.button
-              key={`button-close-${event.id}-${id}`}
-              layout
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: 0.05 } }}
-              className="flex absolute top-4 right-4 z-50 items-center justify-center bg-white dark:bg-neutral-800 text-black dark:text-white rounded-full h-7 w-7 shadow-md"
-              onClick={onClose}
-              aria-label="Close modal"
-            >
-              <X className="h-4 w-4" />
-            </motion.button>
+          <div className="fixed inset-0 grid place-items-center z-50 p-4">
             <motion.div
               layoutId={`card-${layoutIdPrefix}-${event.id}`}
               ref={ref}
-              className="w-full max-w-[520px] h-full md:h-fit md:max-h-[90%] flex flex-col bg-card border border-border sm:rounded-3xl overflow-hidden text-card-foreground shadow-2xl"
+              className="w-full max-w-[520px] flex flex-col bg-card border border-border rounded-3xl overflow-hidden text-card-foreground shadow-2xl"
             >
               <div>
                 <div className="flex justify-between items-start p-5 border-b bg-muted/40">
@@ -226,7 +212,7 @@ export function ExpandableEventCardModal({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8, transition: { duration: 0.1, ease: "easeIn" } }}
                     transition={{ duration: 0.25, ease: "easeOut", delay: 0.1 }}
-                    className="text-muted-foreground text-xs md:text-sm lg:text-base md:h-fit pb-6 flex flex-col items-start gap-4 overflow-auto"
+                    className="text-muted-foreground text-sm pb-6 flex flex-col items-start gap-4"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 w-full pt-1">
                       <Badge variant="secondary" className="font-medium">
@@ -298,7 +284,7 @@ export function ExpandableEventCardModal({
                       </div>
                     </div>
 
-                    <div className="w-full pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div className="w-full pt-2 flex flex-wrap items-center gap-3">
                       {mapsUrl && (
                         <a
                           href={mapsUrl}

@@ -87,8 +87,16 @@ import { ExpandableEventCardModal } from "@/components/ui/expandable-card";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { SpotlightSearch } from "@/components/ui/spotlight-search";
 import { DotBackground } from "@/components/ui/dot-background";
-import { AnimatedTooltip } from "@/components/ui/animated-tooltip";
 import { Typography } from "@/components/ui/typography";
+import {
+  DATE_OPTIONS,
+  DEFAULT_RADIUS_MILES,
+  FilterBar,
+  PRICE_OPTIONS,
+  type DateFilter,
+  type FilterBarValue,
+  type PriceFilter,
+} from "@/components/filters/filter-bar";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -102,16 +110,8 @@ const PAGE_SIZE = 24;
  */
 const SEARCH_DEBOUNCE_MS = 250;
 
-type DateFilter = "all" | "today" | "tomorrow" | "week";
 type ViewMode = "list" | "map";
 type Tab = "my-events" | "discover" | "preferences";
-
-const DATE_OPTIONS: Array<{ value: DateFilter; label: string }> = [
-  { value: "all", label: "All upcoming" },
-  { value: "today", label: "Today" },
-  { value: "tomorrow", label: "Tomorrow" },
-  { value: "week", label: "Next 7 days" },
-];
 
 const META_LABELS: Record<string, string> = {
   booster_draft: "Booster Draft",
@@ -156,6 +156,12 @@ function initialDateFilter(): DateFilter {
   const value = initialParams.get("date");
   return DATE_OPTIONS.some((option) => option.value === value) ? value as DateFilter : "all";
 }
+
+function initialPriceFilter(): PriceFilter {
+  const value = initialParams.get("price");
+  return PRICE_OPTIONS.some((option) => option.value === value) ? value as PriceFilter : "all";
+}
+
 
 function initialTab(authEnabled: boolean): Tab {
   const value = initialParams.get("tab");
@@ -350,20 +356,41 @@ function groupEventsByDate(events: EventListItem[]) {
   return groups;
 }
 
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(date.getDate() + days);
+  return next;
+}
+
+// Every window but "tomorrow" runs from the start of today, so they nest rather
+// than tile — "next 3 days" includes today.
+const DATE_WINDOW_DAYS: Record<"today" | "3days" | "week" | "month", number> = {
+  today: 1,
+  "3days": 3,
+  week: 7,
+  month: 30,
+};
+
 function matchesDate(event: EventListItem, filter: DateFilter) {
   if (filter === "all") return true;
   const eventDate = new Date(event.startsAt);
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const tomorrow = new Date(start);
-  tomorrow.setDate(start.getDate() + 1);
-  const dayAfterTomorrow = new Date(start);
-  dayAfterTomorrow.setDate(start.getDate() + 2);
-  const nextWeek = new Date(start);
-  nextWeek.setDate(start.getDate() + 7);
-  if (filter === "today") return eventDate >= start && eventDate < tomorrow;
-  if (filter === "tomorrow") return eventDate >= tomorrow && eventDate < dayAfterTomorrow;
-  return eventDate >= start && eventDate < nextWeek;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (filter === "tomorrow") {
+    const startOfTomorrow = addDays(startOfToday, 1);
+    return eventDate >= startOfTomorrow && eventDate < addDays(startOfTomorrow, 1);
+  }
+  return eventDate >= startOfToday && eventDate < addDays(startOfToday, DATE_WINDOW_DAYS[filter]);
+}
+
+function matchesPrice(event: EventListItem, filter: PriceFilter) {
+  if (filter === "all") return true;
+  // An absent price is unstated, not zero. Counting it as free would promise
+  // something the listing never said.
+  if (event.priceAmount === null) return false;
+  if (filter === "free") return event.priceAmount === 0;
+  if (filter === "under10") return event.priceAmount < 10;
+  return event.priceAmount < 25;
 }
 
 function formatPrice(event: EventListItem) {
@@ -377,36 +404,6 @@ function formatPrice(event: EventListItem) {
   } catch {
     return `${event.priceAmount} ${event.priceCurrency ?? ""}`.trim();
   }
-}
-
-function GameFilters({ value, onChange, catalog }: { value: Game[]; onChange: (games: Game[]) => void; catalog: GameCatalog }) {
-  function toggleGame(game: Game) {
-    onChange(value.includes(game) ? value.filter((item) => item !== game) : [...value, game]);
-  }
-
-  return (
-    <fieldset className="flex min-w-0 items-center gap-1 overflow-x-auto py-1" aria-label="Games">
-      <legend className="sr-only">Games</legend>
-      {catalog.ids.map((game) => {
-        const selected = value.includes(game);
-        return (
-          <AnimatedTooltip key={game} title={catalog.label(game)}>
-            <Button
-              type="button"
-              variant={selected ? "secondary" : "ghost"}
-              size="icon"
-              className={`size-10 ${selected ? "ring-1 ring-primary/40" : "opacity-45 hover:opacity-100"}`}
-              aria-label={`${selected ? "Exclude" : "Include"} ${catalog.label(game)} events`}
-              aria-pressed={selected}
-              onClick={() => toggleGame(game)}
-            >
-              <GameIcon game={game} className="size-5 object-contain" decorative />
-            </Button>
-          </AnimatedTooltip>
-        );
-      })}
-    </fieldset>
-  );
 }
 
 function GamePreferencePicker({ value, onChange, catalog }: { value: Game[]; onChange: (games: Game[]) => void; catalog: GameCatalog }) {
@@ -436,24 +433,6 @@ function GamePreferencePicker({ value, onChange, catalog }: { value: Game[]; onC
         })}
       </div>
     </fieldset>
-  );
-}
-
-function DateFilters({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {
-  const options = DATE_OPTIONS.map((opt) => ({
-    value: opt.value,
-    label: opt.value === "all" ? "Any date" : opt.value === "week" ? "This week" : opt.label,
-  }));
-
-  return (
-    <div aria-label="Date filter">
-      <AnimatedTabs
-        options={options}
-        value={value}
-        onChange={onChange}
-        layoutId="date-filter-pill"
-      />
-    </div>
   );
 }
 
@@ -606,7 +585,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
   const [preferenceStatus, setPreferenceStatus] = useState<"idle" | "loading" | "ready" | "saved" | "saving" | "error">("idle");
   const [placeQuery, setPlaceQuery] = useState(initialParams.get("place") ?? "Chicago, IL");
-  const [radiusMiles, setRadiusMiles] = useState(initialNumber("radius", 25));
+  const [radiusMiles, setRadiusMiles] = useState(initialNumber("radius", DEFAULT_RADIUS_MILES));
+  const [priceFilter, setPriceFilter] = useState<PriceFilter>(initialPriceFilter);
   const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "locating">("idle");
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
@@ -795,6 +775,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     if (selectedGames.length !== catalog.ids.length) params.set("games", selectedGames.join(","));
     if (query) params.set("q", query);
     if (dateFilter !== "all") params.set("date", dateFilter);
+    if (priceFilter !== "all") params.set("price", priceFilter);
     if (viewMode !== "list") params.set("view", viewMode);
     params.set("lat", location.latitude.toFixed(5));
     params.set("lng", location.longitude.toFixed(5));
@@ -802,7 +783,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     params.set("place", locationLabel);
     const nextUrl = `${window.location.pathname}?${params}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [auth.enabled, catalog.ids.length, dateFilter, location, locationLabel, query, radiusMiles, selectedGames, tab, viewMode]);
+  }, [auth.enabled, catalog.ids.length, dateFilter, location, locationLabel, priceFilter, query, radiusMiles, selectedGames, tab, viewMode]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -810,16 +791,37 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     setHighlightedEventId(null);
     // Keyed on the debounced term, not the raw input: the list a selection
     // refers to only changes when a request has actually been made for it.
-  }, [dateFilter, searchTerm, radiusMiles, selectedGames]);
+  }, [dateFilter, priceFilter, searchTerm, radiusMiles, selectedGames]);
 
   // The text query is applied by the API, against every event in range rather
   // than only the pages gathered here. What is left to do locally is the date
-  // filter, which is derived from data already on screen.
+  // and price filters, which are derived from data already on screen.
   const visibleEvents = useMemo(() => {
     const filtered = events.filter((event) =>
-      selectedGames.includes(event.game) && matchesDate(event, dateFilter));
+      selectedGames.includes(event.game) &&
+      matchesDate(event, dateFilter) &&
+      matchesPrice(event, priceFilter));
     return sortEvents(filtered);
-  }, [dateFilter, events, selectedGames]);
+  }, [dateFilter, events, priceFilter, selectedGames]);
+
+  // Signed-in users start from the games they saved; everyone else starts from
+  // the whole catalogue. This is what the chip resets to, not an empty set.
+  const defaultGames = useMemo(
+    () => (auth.signedIn && accountGames.length > 0 ? accountGames : catalog.ids),
+    [accountGames, auth.signedIn, catalog.ids],
+  );
+
+  const filterValue = useMemo<FilterBarValue>(
+    () => ({ dateFilter, radiusMiles, games: selectedGames, price: priceFilter }),
+    [dateFilter, priceFilter, radiusMiles, selectedGames],
+  );
+
+  const handleFilterChange = useCallback((next: Partial<FilterBarValue>) => {
+    if (next.dateFilter !== undefined) setDateFilter(next.dateFilter);
+    if (next.radiusMiles !== undefined) setRadiusMiles(next.radiusMiles);
+    if (next.games !== undefined) setSelectedGames(next.games);
+    if (next.price !== undefined) setPriceFilter(next.price);
+  }, []);
 
   const pagedEvents = visibleEvents.slice(0, visibleCount);
   const eventGroups = groupEventsByDate(pagedEvents);
@@ -1336,25 +1338,14 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                       )}
                     </div>
 
-                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="max-w-full overflow-x-auto pb-1 sm:pb-0">
-                        <DateFilters value={dateFilter} onChange={setDateFilter} />
-                      </div>
-                      <div className="flex items-center justify-between gap-2 sm:justify-end">
-                        {auth.loaded && !auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} catalog={catalog} />}
-                        <div>
-                          <Label htmlFor="radius" className="sr-only">Search radius</Label>
-                          <select
-                            id="radius"
-                            className="h-11 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                            value={radiusMiles}
-                            onChange={(event) => setRadiusMiles(Number(event.target.value))}
-                          >
-                            {[10, 25, 50, 100].map((radius) => <option key={radius} value={radius}>{radius} mi</option>)}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
+                    <FilterBar
+                      className="mt-2"
+                      value={filterValue}
+                      onChange={handleFilterChange}
+                      catalog={catalog}
+                      defaultGames={defaultGames}
+                      resultCount={visibleEvents.length}
+                    />
 
                     {locationNotice && (
                       <p role="status" className="mt-2 inline-flex items-center gap-1 text-xs text-destructive empty:hidden">
