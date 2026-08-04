@@ -610,7 +610,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [preferencesReady, setPreferencesReady] = useState(!auth.enabled);
   const [preferencesReloadKey, setPreferencesReloadKey] = useState(0);
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
-  const [preferenceStatus, setPreferenceStatus] = useState<"idle" | "loading" | "ready" | "saving" | "error">("idle");
+  const [preferenceStatus, setPreferenceStatus] = useState<"idle" | "loading" | "ready" | "saved" | "saving" | "error">("idle");
   const [placeQuery, setPlaceQuery] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [radiusMiles, setRadiusMiles] = useState(initialNumber("radius", 25));
   const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
@@ -729,7 +729,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         }
         if (controller.signal.aborted) return;
         setPreferencesReady(true);
-        setPreferenceStatus("ready");
+        setPreferenceStatus("idle");
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -886,7 +886,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setPreferenceGamesDraft(preferences.selectedGames);
       setSelectedGames(preferences.selectedGames);
       setOnboardingCompleted(preferences.onboardingCompleted);
-      setPreferenceStatus("ready");
+      setPreferenceStatus("saved");
     } catch (error) {
       // Logged as well as shown: the surfaced text is deliberately short, and
       // the underlying error is what makes a failure diagnosable at all.
@@ -954,16 +954,12 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             <SidebarHeader>
               <div className="flex h-12 items-center gap-2.5 px-2">
                 <img src="/town-map.png" alt="Town Map logo" className="size-8 object-contain shrink-0" />
-                <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-                  <span className="font-bold text-sm leading-tight tracking-tight">Town Map</span>
-                  <span className="text-[10px] text-muted-foreground leading-none">Tournament Finder</span>
-                </div>
+                <span className="font-bold text-sm leading-tight tracking-tight group-data-[collapsible=icon]:hidden">Town Map</span>
               </div>
             </SidebarHeader>
 
             <SidebarContent>
               <SidebarGroup>
-                <SidebarGroupLabel>Navigation</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
@@ -990,17 +986,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                             {savedEvents.length}
                           </SidebarMenuBadge>
                         )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        isActive={tab === "preferences"}
-                        tooltip="Preferences"
-                        onClick={() => setTab("preferences")}
-                      >
-                        <Settings2 />
-                        <span>Preferences</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   </SidebarMenu>
@@ -1157,7 +1142,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                         </div>
                       )}
 
-                      {preferenceStatus === "ready" && !homeNotice && (
+                      {preferenceStatus === "saved" && !homeNotice && (
                         <p role="status" className="text-xs text-emerald-600 dark:text-emerald-400">Preferences saved.</p>
                       )}
 
