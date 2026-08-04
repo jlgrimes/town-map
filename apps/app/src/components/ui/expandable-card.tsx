@@ -167,28 +167,30 @@ export function ExpandableEventCardModal({
             >
               <div>
                 <div className="flex justify-between items-start p-5 border-b bg-muted/40">
-                  <div className="flex gap-4 flex-col md:flex-row items-start">
-                    <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`}>
-                      <div className="h-14 w-14 rounded-xl bg-background flex items-center justify-center p-2 border border-border shrink-0 shadow-xs ring-1 ring-border/50">
-                        <GameIcon game={event.game} className="size-10 object-contain" />
+                  {/* Same grouping as the collapsed row: icon and text stay on one line,
+                      vertically centered, at the row's gap. */}
+                  <div className="flex gap-3.5 items-center min-w-0 flex-1">
+                    <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
+                      <div className="h-12 w-12 rounded-xl bg-background flex items-center justify-center p-1.5 border border-border shrink-0 shadow-xs ring-1 ring-border/50">
+                        <GameIcon game={event.game} className="size-8 object-contain" />
                       </div>
                     </motion.div>
-                    {/* The row truncates its title at text-sm inside a flex-1 box; here it wraps
-                        at text-lg. A shared layoutId would have to scale the element to bridge
-                        those two widths, which stretches the glyphs. So this text isn't shared —
-                        `layout` makes the outer node cancel the card's scale, and the inner node
-                        fades in at its final size. */}
-                    <motion.div layout className="min-w-0">
+                    {/* Type matches the collapsed row. Still not layoutId-shared: the row
+                        truncates inside a flex-1 box while this wraps at content width, so a
+                        shared element could only bridge those widths by scaling the glyphs.
+                        `layout` makes the outer node cancel the card's scale, and the inner
+                        node fades in at its final size. */}
+                    <motion.div layout className="min-w-0 flex-1">
                       <motion.div
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, transition: { duration: 0.05 } }}
                         transition={{ duration: 0.2, ease: "easeOut", delay: 0.08 }}
                       >
-                        <h3 className="font-bold text-foreground text-lg leading-tight">
+                        <h3 className="font-bold text-foreground text-sm leading-snug">
                           {event.title}
                         </h3>
-                        <p className="text-muted-foreground text-sm mt-0.5">
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {location || "Venue to be announced"}
                         </p>
                       </motion.div>
