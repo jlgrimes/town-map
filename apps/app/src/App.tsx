@@ -1,7 +1,16 @@
 import { Geolocation } from "@capacitor/geolocation";
-import { SignInButton, UserButton } from "@clerk/react";
+import { SignInButton, useClerk, useUser } from "@clerk/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyContent,
@@ -20,20 +29,43 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { recurrenceLabel, type EventListItem, type Game } from "@town-map/contracts";
 import {
   Bookmark,
   BookmarkCheck,
   ChevronDown,
+  ChevronsUpDown,
   CircleAlert,
   Compass,
   List,
   LocateFixed,
+  LogOut,
   Map as MapIcon,
   MapPin,
   RefreshCw,
   Search,
   Settings2,
+  SlidersHorizontal,
+  User,
   X,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
@@ -64,7 +96,7 @@ const SEARCH_DEBOUNCE_MS = 250;
 
 type DateFilter = "all" | "today" | "tomorrow" | "week";
 type ViewMode = "list" | "map";
-type Tab = "my-events" | "discover";
+type Tab = "my-events" | "discover" | "preferences";
 
 const DATE_OPTIONS: Array<{ value: DateFilter; label: string }> = [
   { value: "all", label: "All upcoming" },
@@ -117,16 +149,10 @@ function initialDateFilter(): DateFilter {
   return DATE_OPTIONS.some((option) => option.value === value) ? value as DateFilter : "all";
 }
 
-/**
- * The app opens on "My events": what a user chose is worth more than a list they
- * have not looked at yet.
- *
- * That tab only means anything with accounts configured, so a build without
- * Clerk opens on Discover rather than on a tab it can never fill.
- */
 function initialTab(authEnabled: boolean): Tab {
-  if (!authEnabled) return "discover";
   const value = initialParams.get("tab");
+  if (value === "preferences") return "preferences";
+  if (!authEnabled) return "discover";
   if (value === "discover" || value === "my-events") return value;
   const hasDiscoveryParams =
     initialParams.has("q") ||
@@ -137,6 +163,125 @@ function initialTab(authEnabled: boolean): Tab {
     initialParams.has("lng") ||
     initialParams.has("view");
   return hasDiscoveryParams ? "discover" : "my-events";
+}
+
+function SignedInUserFooter({ setTab }: { setTab: (tab: Tab) => void }) {
+  const clerk = useClerk();
+  const { user } = useUser();
+  const avatarUrl = user?.imageUrl;
+  const displayName = user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress || "Account";
+  const email = user?.primaryEmailAddress?.emailAddress;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <SidebarMenuButton
+          size="lg"
+          tooltip="Account & preferences"
+          className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+        >
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={displayName} className="size-8 rounded-lg object-cover shrink-0" />
+          ) : (
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-xs font-semibold">
+              {displayName.slice(0, 2).toUpperCase()}
+            </div>
+          )}
+          <div className="grid flex-1 text-left text-xs leading-tight">
+            <span className="truncate font-semibold">{displayName}</span>
+            {email && <span className="truncate text-muted-foreground">{email}</span>}
+          </div>
+          <ChevronsUpDown className="ml-auto size-4 shrink-0" />
+        </SidebarMenuButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+        side="top"
+        align="start"
+        sideOffset={6}
+      >
+        <DropdownMenuLabel className="p-0 font-normal">
+          <div className="flex items-center gap-2 px-2 py-2 text-left text-sm">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={displayName} className="size-8 rounded-lg object-cover shrink-0" />
+            ) : (
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-xs font-semibold">
+                {displayName.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="grid flex-1 text-left text-xs leading-tight">
+              <span className="truncate font-semibold">{displayName}</span>
+              {email && <span className="truncate text-muted-foreground">{email}</span>}
+            </div>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => clerk.openUserProfile()}>
+            <User className="mr-2 size-4" />
+            Account settings
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTab("preferences")}>
+            <SlidersHorizontal className="mr-2 size-4" />
+            App preferences
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => clerk.signOut()}>
+          <LogOut className="mr-2 size-4" />
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function UserFooterMenu({ auth, setTab }: { auth: AppAuth; setTab: (tab: Tab) => void }) {
+  if (!auth.enabled) {
+    return (
+      <SidebarMenuButton tooltip="Guest mode" className="cursor-default opacity-70">
+        <User className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate text-xs text-muted-foreground">Guest mode</span>
+      </SidebarMenuButton>
+    );
+  }
+
+  if (!auth.loaded) {
+    return (
+      <SidebarMenuButton disabled>
+        <div className="size-6 animate-pulse rounded-full bg-muted" />
+        <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+      </SidebarMenuButton>
+    );
+  }
+
+  if (!auth.signedIn) {
+    return (
+      <SignInButton mode="modal">
+        <SidebarMenuButton tooltip="Sign in">
+          <User className="size-4 shrink-0" />
+          <span>Sign in</span>
+        </SidebarMenuButton>
+      </SignInButton>
+    );
+  }
+
+  return <SignedInUserFooter setTab={setTab} />;
+}
+
+function AccountSettingsCard() {
+  const clerk = useClerk();
+  return (
+    <div className="rounded-xl border bg-card p-5 shadow-xs flex items-center justify-between gap-4">
+      <div>
+        <h3 className="font-semibold text-sm">Account settings</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Manage your user profile, email addresses, and security settings via Clerk.</p>
+      </div>
+      <Button variant="outline" size="sm" onClick={() => clerk.openUserProfile()}>
+        Manage account
+      </Button>
+    </div>
+  );
 }
 
 function initialNumber(name: string, fallback: number) {
@@ -458,7 +603,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   });
   const [locationLabel, setLocationLabel] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [homeAddress, setHomeAddress] = useState<string | null>(null);
-  const [preferencesEditorOpen, setPreferencesEditorOpen] = useState(false);
   const [homeDraft, setHomeDraft] = useState("");
   const [accountGames, setAccountGames] = useState<Game[]>([]);
   const [preferenceGamesDraft, setPreferenceGamesDraft] = useState<Game[]>([]);
@@ -743,7 +887,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setSelectedGames(preferences.selectedGames);
       setOnboardingCompleted(preferences.onboardingCompleted);
       setPreferenceStatus("ready");
-      setPreferencesEditorOpen(false);
     } catch (error) {
       // Logged as well as shown: the surfaced text is deliberately short, and
       // the underlying error is what makes a failure diagnosable at all.
@@ -804,433 +947,520 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   };
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
-      <a href="#main-content" className="sr-only z-[1000] bg-background px-4 py-3 font-semibold focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
-        Skip to events
-      </a>
-
-      {auth.enabled && auth.loaded && auth.signedIn && preferencesReady && !onboardingCompleted && (
-        <div className="fixed inset-0 z-[100] overflow-y-auto bg-background/95 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-          <div className="mx-auto flex min-h-full max-w-lg items-center justify-center">
-            <div className="w-full rounded-xl border bg-card p-5 text-card-foreground shadow-xl sm:p-7">
-              <div className="flex items-center gap-3">
-                <img src="/town-map.png" alt="" className="size-11 object-contain" />
-                <div>
-                  <h2 id="onboarding-title" className="text-lg font-semibold">Find tournaments near you</h2>
-                  <p className="text-sm text-muted-foreground">Tell us where to look and which games you play.</p>
+    <TooltipProvider>
+      <SidebarProvider defaultOpen={true}>
+        <div className="flex min-h-svh w-full bg-background text-foreground">
+          <Sidebar collapsible="icon">
+            <SidebarHeader>
+              <div className="flex h-12 items-center gap-2.5 px-2">
+                <img src="/town-map.png" alt="Town Map logo" className="size-8 object-contain shrink-0" />
+                <div className="flex flex-col group-data-[collapsible=icon]:hidden">
+                  <span className="font-bold text-sm leading-tight tracking-tight">Town Map</span>
+                  <span className="text-[10px] text-muted-foreground leading-none">Tournament Finder</span>
                 </div>
               </div>
-              <form onSubmit={saveAccountPreferences} className="mt-6 space-y-5">
-                <div className="space-y-1.5">
-                  <Label htmlFor="onboarding-home">Home area</Label>
-                  <Input
-                    id="onboarding-home"
-                    value={homeDraft}
-                    onChange={(event) => setHomeDraft(event.target.value)}
-                    placeholder="Chicago, IL or 60614"
-                    autoComplete="street-address"
-                    className="h-11"
-                    autoFocus
-                  />
-                  <p className="text-xs text-muted-foreground">A city, ZIP code, or full address works.</p>
-                </div>
-                <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
-                {preferenceGamesDraft.length === 0 && <p className="text-xs text-muted-foreground">Choose at least one game.</p>}
-                {homeNotice && <p role="status" className="text-sm text-destructive">{homeNotice}</p>}
-                <Button
-                  type="submit"
-                  className="h-11 w-full"
-                  disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving"}
-                >
-                  {preferenceStatus === "saving" ? "Saving…" : "Show nearby tournaments"}
-                </Button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+            </SidebarHeader>
 
-      <header className="shrink-0 border-b">
-        <div className="mx-auto flex h-14 max-w-[90rem] items-center px-4 sm:px-6 lg:px-8">
-          <a href="/" className="inline-flex items-center gap-2 text-sm font-semibold" aria-label="Town Map home">
-            <img src="/town-map.png" alt="" className="size-8 object-contain" />
-            <span>Town Map</span>
-          </a>
-          {auth.enabled && (
-            <div className="ml-auto flex items-center gap-1">
-              {!auth.loaded ? (
-                <div className="h-9 w-20 animate-pulse rounded-md bg-muted" />
-              ) : auth.signedIn ? (
-                <>
-                  <Popover open={preferencesEditorOpen} onOpenChange={(open) => {
-                    setPreferencesEditorOpen(open);
-                    setHomeNotice(null);
-                    if (open) {
-                      setHomeDraft(homeAddress ?? "");
-                      setPreferenceGamesDraft(accountGames);
-                    }
-                  }}>
+            <SidebarContent>
+              <SidebarGroup>
+                <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={tab === "discover"}
+                        tooltip="Discover"
+                        onClick={() => setTab("discover")}
+                      >
+                        <Compass />
+                        <span>Discover</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={tab === "my-events"}
+                        tooltip="My events"
+                        onClick={() => setTab("my-events")}
+                      >
+                        <Bookmark />
+                        <span>My events</span>
+                        {canSave && savedEvents.length > 0 && (
+                          <SidebarMenuBadge className="font-medium group-data-[collapsible=icon]:hidden">
+                            {savedEvents.length}
+                          </SidebarMenuBadge>
+                        )}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={tab === "preferences"}
+                        tooltip="Preferences"
+                        onClick={() => setTab("preferences")}
+                      >
+                        <Settings2 />
+                        <span>Preferences</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </SidebarContent>
+
+            <SidebarFooter>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <UserFooterMenu auth={auth} setTab={setTab} />
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarFooter>
+
+            <SidebarRail />
+          </Sidebar>
+
+          <SidebarInset className="flex flex-1 flex-col min-w-0 h-svh overflow-hidden">
+            <a href="#main-content" className="sr-only z-[1000] bg-background px-4 py-3 font-semibold focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
+              Skip to events
+            </a>
+
+            {auth.enabled && auth.loaded && auth.signedIn && preferencesReady && !onboardingCompleted && (
+              <div className="fixed inset-0 z-[100] overflow-y-auto bg-background/95 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+                <div className="mx-auto flex min-h-full max-w-lg items-center justify-center">
+                  <div className="w-full rounded-xl border bg-card p-5 text-card-foreground shadow-xl sm:p-7">
+                    <div className="flex items-center gap-3">
+                      <img src="/town-map.png" alt="" className="size-11 object-contain" />
+                      <div>
+                        <h2 id="onboarding-title" className="text-lg font-semibold">Find tournaments near you</h2>
+                        <p className="text-sm text-muted-foreground">Tell us where to look and which games you play.</p>
+                      </div>
+                    </div>
+                    <form onSubmit={saveAccountPreferences} className="mt-6 space-y-5">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="onboarding-home">Home area</Label>
+                        <Input
+                          id="onboarding-home"
+                          value={homeDraft}
+                          onChange={(event) => setHomeDraft(event.target.value)}
+                          placeholder="Chicago, IL or 60614"
+                          autoComplete="street-address"
+                          className="h-11"
+                          autoFocus
+                        />
+                        <p className="text-xs text-muted-foreground">A city, ZIP code, or full address works.</p>
+                      </div>
+                      <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
+                      {preferenceGamesDraft.length === 0 && <p className="text-xs text-muted-foreground">Choose at least one game.</p>}
+                      {homeNotice && <p role="status" className="text-sm text-destructive">{homeNotice}</p>}
+                      <Button
+                        type="submit"
+                        className="h-11 w-full"
+                        disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving"}
+                      >
+                        {preferenceStatus === "saving" ? "Saving…" : "Show nearby tournaments"}
+                      </Button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4 lg:px-6">
+              <div className="flex items-center gap-3">
+                <SidebarTrigger />
+                <Separator orientation="vertical" className="h-4" />
+                <h1 className="text-sm font-semibold tracking-tight">
+                  {tab === "my-events" ? "My events" : tab === "preferences" ? "Preferences" : "Discover"}
+                </h1>
+              </div>
+              {tab === "discover" && auth.loaded && !auth.signedIn && (
+                <div className="flex items-center gap-2">
+                  <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" className="min-h-10 px-3">
-                        <Settings2 /> Preferences
+                      <Button variant="outline" size="sm" className="h-9 gap-2 font-normal">
+                        <MapPin className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate max-w-40 sm:max-w-xs">{locationLabel}</span>
+                        <ChevronDown className="size-3.5 shrink-0 opacity-60" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-4">
+                    <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
                       <PopoverHeader>
-                        <PopoverTitle>Tournament preferences</PopoverTitle>
-                        <PopoverDescription>These determine which nearby events Town Map shows you.</PopoverDescription>
+                        <PopoverTitle>Search location</PopoverTitle>
+                        <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
                       </PopoverHeader>
-                      <form onSubmit={saveAccountPreferences} className="space-y-4">
+                      <form onSubmit={searchPlace} className="space-y-3">
                         <div className="space-y-1.5">
-                          <Label htmlFor="home-address">Home area</Label>
+                          <Label htmlFor="place-search">City, state, or ZIP code</Label>
                           <Input
-                            id="home-address"
-                            value={homeDraft}
-                            onChange={(event) => setHomeDraft(event.target.value)}
-                            placeholder="Chicago, IL or 60614"
-                            autoComplete="street-address"
-                            className="h-10"
+                            id="place-search"
+                            value={placeQuery}
+                            onChange={(event) => setPlaceQuery(event.target.value)}
+                            placeholder="Chicago, IL"
+                            autoComplete="postal-code"
+                            className="h-11"
+                            autoFocus
                           />
                         </div>
-                        <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
-                        {homeNotice && <p role="status" className="text-xs text-destructive">{homeNotice}</p>}
-                        <Button
-                          type="submit"
-                          className="w-full"
-                          disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving"}
-                        >
-                          {preferenceStatus === "saving" ? "Saving…" : "Save preferences"}
-                        </Button>
+                        {locationNotice && (
+                          <p role="status" className="flex items-start gap-1 text-xs text-destructive">
+                            <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+                            {locationStatus === "searching" ? "Searching…" : "Search"}
+                          </Button>
+                          <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
+                            <LocateFixed />
+                          </Button>
+                        </div>
                       </form>
                     </PopoverContent>
                   </Popover>
-                  <UserButton />
-                </>
-              ) : (
-                <SignInButton mode="modal">
-                  <Button variant="ghost" className="min-h-10 px-3">Sign in</Button>
-                </SignInButton>
-              )}
-            </div>
-          )}
-        </div>
-      </header>
-
-      <main id="main-content" className="mx-auto flex min-h-0 w-full max-w-[90rem] flex-1 flex-col px-4 py-3 sm:px-6 lg:px-8">
-        <h1 className="sr-only">Town Map events</h1>
-
-        {/*
-          Buttons with `aria-current` rather than a tablist: real tab semantics
-          oblige arrow-key navigation and a labelled panel per tab, and these two
-          swap the whole view rather than a panel inside it.
-        */}
-        {auth.enabled && (
-          <nav aria-label="Views" className="flex shrink-0 gap-1 border-b">
-            {([
-              { id: "my-events", label: "My events", icon: <Bookmark /> },
-              { id: "discover", label: "Discover", icon: <Compass /> },
-            ] as const).map((item) => (
-              <Button
-                key={item.id}
-                type="button"
-                variant="ghost"
-                aria-current={tab === item.id ? "page" : undefined}
-                className={`min-h-11 rounded-none border-b-2 px-4 ${
-                  tab === item.id ? "border-primary font-semibold" : "border-transparent text-muted-foreground"
-                }`}
-                onClick={() => setTab(item.id)}
-              >
-                {item.icon}
-                {item.label}
-                {item.id === "my-events" && canSave && savedEvents.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 font-normal tabular-nums">{savedEvents.length}</Badge>
-                )}
-              </Button>
-            ))}
-          </nav>
-        )}
-
-        {tab === "my-events" ? (
-          <section aria-labelledby="my-events-heading" className="flex min-h-0 flex-1 flex-col">
-            <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b py-2 text-sm">
-              <h2 id="my-events-heading" className="font-semibold">My events</h2>
-              {canSave && savedStatus !== "error" && (
-                <p className="text-muted-foreground">
-                  {savedStatus === "loading"
-                    ? "Loading your events…"
-                    : `${savedEvents.length} ${savedEvents.length === 1 ? "event" : "events"} saved`}
-                </p>
-              )}
-            </div>
-
-            {savedNotice && (
-              <p role="status" className="flex items-start gap-1 py-2 text-xs text-destructive">
-                <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{savedNotice}
-              </p>
-            )}
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              {!auth.loaded || (auth.signedIn && (savedStatus === "loading" || !preferencesReady)) ? (
-                <LoadingCards />
-              ) : !canSave ? (
-                <Empty className="py-16">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon"><Bookmark /></EmptyMedia>
-                    <EmptyTitle>Sign in to keep events</EmptyTitle>
-                    <EmptyDescription>
-                      Saved events live on your account, so they are still here on your phone and on your laptop.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent className="flex-row justify-center gap-2">
-                    <SignInButton mode="modal"><Button className="min-h-11 px-4">Sign in</Button></SignInButton>
-                    <Button variant="outline" className="min-h-11 px-4" onClick={() => setTab("discover")}>Browse events</Button>
-                  </EmptyContent>
-                </Empty>
-              ) : savedStatus === "error" ? (
-                <Empty className="py-16">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon"><RefreshCw /></EmptyMedia>
-                    <EmptyTitle>Your events could not be loaded</EmptyTitle>
-                    <EmptyDescription>Nothing has been lost. Check your connection and try again.</EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <Button variant="outline" className="min-h-11 px-4" onClick={() => setSavedReloadKey((value) => value + 1)}>
-                      Try again
-                    </Button>
-                  </EmptyContent>
-                </Empty>
-              ) : savedEvents.length === 0 ? (
-                <Empty className="py-16">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon"><Bookmark /></EmptyMedia>
-                    <EmptyTitle>Nothing saved yet</EmptyTitle>
-                    <EmptyDescription>
-                      Save an event from Discover and it will be waiting here, soonest first.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <Button className="min-h-11 px-4" onClick={() => setTab("discover")}>Find events</Button>
-                  </EmptyContent>
-                </Empty>
-              ) : (
-                <div className="border-b" aria-label="Saved events">
-                  {groupEventsByDate(savedEvents).map((group) => (
-                    <section key={group.key} aria-labelledby={`saved-${group.key}`}>
-                      <h3 id={`saved-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                        {group.label}
-                      </h3>
-                      <ol className="divide-y">
-                        {group.events.map((event) => (
-                          <EventRow
-                            key={event.id}
-                            event={event}
-                            active={false}
-                            saved
-                            canSave={canSave}
-                            onPreview={() => undefined}
-                            onSelect={() => undefined}
-                            onToggleSave={toggleSaved}
-                          />
-                        ))}
-                      </ol>
-                    </section>
-                  ))}
                 </div>
               )}
-              <p className="px-2 py-5 text-xs text-muted-foreground">
-                Verify details with the organizer. Past events drop off this list automatically.
-              </p>
-            </div>
-          </section>
-        ) : (
-        <>
-        <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
-          <div className={`grid gap-2 ${auth.loaded && !auth.signedIn ? "sm:grid-cols-[minmax(0,1fr)_auto]" : ""}`}>
-            <div className="relative">
-              <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="event-search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search events or venues"
-                className="h-11 pr-11 pl-10"
-              />
-              {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
-            </div>
+            </header>
 
-            {auth.loaded && !auth.signedIn && (
-              <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="h-11 w-full justify-between gap-2 px-3 font-normal sm:w-auto sm:max-w-72">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <MapPin className="shrink-0" />
-                      <span className="truncate">{locationLabel}</span>
-                    </span>
-                    <ChevronDown className="shrink-0" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
-                  <PopoverHeader>
-                    <PopoverTitle>Search location</PopoverTitle>
-                    <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
-                  </PopoverHeader>
-                  <form onSubmit={searchPlace} className="space-y-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="place-search">City, state, or ZIP code</Label>
-                      <Input
-                        id="place-search"
-                        value={placeQuery}
-                        onChange={(event) => setPlaceQuery(event.target.value)}
-                        placeholder="Chicago, IL"
-                        autoComplete="postal-code"
-                        className="h-11"
-                        autoFocus
-                      />
-                    </div>
-                    {locationNotice && (
-                      <p role="status" className="flex items-start gap-1 text-xs text-destructive">
-                        <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
+            <main id="main-content" className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-3 sm:px-6 lg:px-8">
+              {tab === "preferences" ? (
+                <section aria-labelledby="preferences-heading" className="mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col py-4">
+                  <div className="border-b pb-4">
+                    <h2 id="preferences-heading" className="text-xl font-bold tracking-tight">App preferences</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Configure your default home location and preferred trading card games for tournament search.
+                    </p>
+                  </div>
+
+                  <div className="mt-6 space-y-6">
+                    <form onSubmit={saveAccountPreferences} className="space-y-6 rounded-xl border bg-card p-6 shadow-xs">
+                      <div className="space-y-2">
+                        <Label htmlFor="pref-home-address" className="text-base font-semibold">Home area</Label>
+                        <Input
+                          id="pref-home-address"
+                          value={homeDraft}
+                          onChange={(event) => setHomeDraft(event.target.value)}
+                          placeholder="Chicago, IL or 60614"
+                          autoComplete="street-address"
+                          className="h-11"
+                        />
+                        <p className="text-xs text-muted-foreground">City, ZIP code, or full address work as your default search center.</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <GamePreferencePicker value={preferenceGamesDraft} onChange={setPreferenceGamesDraft} catalog={catalog} />
+                        {preferenceGamesDraft.length === 0 && <p className="text-xs text-destructive">Choose at least one game.</p>}
+                      </div>
+
+                      {homeNotice && (
+                        <div role="status" className="flex items-center gap-2 text-sm text-destructive">
+                          <CircleAlert className="size-4 shrink-0" />
+                          <span>{homeNotice}</span>
+                        </div>
+                      )}
+
+                      {preferenceStatus === "ready" && !homeNotice && (
+                        <p role="status" className="text-xs text-emerald-600 dark:text-emerald-400">Preferences saved.</p>
+                      )}
+
+                      <Button
+                        type="submit"
+                        className="h-11 w-full sm:w-auto px-6"
+                        disabled={!homeDraft.trim() || preferenceGamesDraft.length === 0 || preferenceStatus === "saving" || !canSave}
+                      >
+                        {preferenceStatus === "saving" ? "Saving…" : "Save preferences"}
+                      </Button>
+                      {!canSave && (
+                        <p className="text-xs text-muted-foreground">Sign in to sync preferences to your account.</p>
+                      )}
+                    </form>
+
+                    {canSave && <AccountSettingsCard />}
+                  </div>
+                </section>
+              ) : tab === "my-events" ? (
+                <section aria-labelledby="my-events-heading" className="flex min-h-0 flex-1 flex-col">
+                  <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b py-2 text-sm">
+                    <h2 id="my-events-heading" className="font-semibold">My events</h2>
+                    {canSave && savedStatus !== "error" && (
+                      <p className="text-muted-foreground">
+                        {savedStatus === "loading"
+                          ? "Loading your events…"
+                          : `${savedEvents.length} ${savedEvents.length === 1 ? "event" : "events"} saved`}
                       </p>
                     )}
-                    <div className="flex gap-2">
-                      <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
-                        {locationStatus === "searching" ? "Searching…" : "Search"}
-                      </Button>
-                      <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
-                        <LocateFixed />
-                      </Button>
-                    </div>
-                  </form>
-                </PopoverContent>
-              </Popover>
-            )}
-          </div>
-
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="max-w-full overflow-x-auto pb-1 sm:pb-0">
-              <DateFilters value={dateFilter} onChange={setDateFilter} />
-            </div>
-            <div className="flex items-center justify-between gap-2 sm:justify-end">
-              {auth.loaded && !auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} catalog={catalog} />}
-              <div>
-                <Label htmlFor="radius" className="sr-only">Search radius</Label>
-                <select
-                  id="radius"
-                  className="h-11 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                  value={radiusMiles}
-                  onChange={(event) => setRadiusMiles(Number(event.target.value))}
-                >
-                  {[10, 25, 50, 100].map((radius) => <option key={radius} value={radius}>{radius} mi</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {locationNotice && (
-            <p role="status" className="mt-2 inline-flex items-center gap-1 text-xs text-destructive empty:hidden">
-              <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
-            </p>
-          )}
-        </section>
-
-        <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
-          <h2 id="events-heading" className="sr-only">Events</h2>
-          <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b py-2 text-sm">
-            <p className="text-muted-foreground">
-              {status === "loading" ? "Finding events…" : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel}`}
-              {status === "preview" ? " · preview data" : ""}
-            </p>
-            <div className="flex lg:hidden" aria-label="Choose results view">
-              <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"}><List /> List</Button>
-              <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("map")} aria-pressed={viewMode === "map"}><MapIcon /> Map</Button>
-            </div>
-          </div>
-
-          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,0.88fr)_minmax(25rem,1.12fr)]">
-            <div className={`${viewMode === "map" ? "hidden" : "block"} min-h-0 min-w-0 overflow-y-auto overscroll-contain lg:block`}>
-              {status === "loading" ? (
-                <LoadingCards />
-              ) : visibleEvents.length === 0 ? (
-                <Empty className="border-b py-16">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
-                    <EmptyTitle>{emptyState.title}</EmptyTitle>
-                    <EmptyDescription>{emptyState.description}</EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent><Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button></EmptyContent>
-                </Empty>
-              ) : (
-                <>
-                  <div className="border-b" aria-label="Event results">
-                    {eventGroups.map((group) => (
-                      <section key={group.key} aria-labelledby={`date-${group.key}`}>
-                        <h3 id={`date-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                          {group.label}
-                        </h3>
-                        <ol className="divide-y">
-                          {group.events.map((event) => (
-                            <EventRow
-                              key={event.id}
-                              event={event}
-                              active={event.id === activeEventId}
-                              saved={savedIds.has(event.id)}
-                              canSave={canSave}
-                              onPreview={setHighlightedEventId}
-                              onSelect={handleListSelect}
-                              onToggleSave={toggleSaved}
-                            />
-                          ))}
-                        </ol>
-                      </section>
-                    ))}
                   </div>
-                  {visibleCount < visibleEvents.length && (
-                    <div className="py-5 text-center">
-                      <Button variant="outline" className="min-h-11 px-5" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                        Load {Math.min(PAGE_SIZE, visibleEvents.length - visibleCount)} more
-                      </Button>
-                    </div>
-                  )}
-                  {resultsTruncated && visibleCount >= visibleEvents.length && (
-                    <p className="px-2 pb-1 text-xs text-muted-foreground">
-                      This area has more events than we can show at once. Narrow the distance or
-                      pick fewer games to see the rest.
+
+                  {savedNotice && (
+                    <p role="status" className="flex items-start gap-1 py-2 text-xs text-destructive">
+                      <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{savedNotice}
                     </p>
                   )}
+
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                    {!auth.loaded || (auth.signedIn && (savedStatus === "loading" || !preferencesReady)) ? (
+                      <LoadingCards />
+                    ) : !canSave ? (
+                      <Empty className="py-16">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon"><Bookmark /></EmptyMedia>
+                          <EmptyTitle>Sign in to keep events</EmptyTitle>
+                          <EmptyDescription>
+                            Saved events live on your account, so they are still here on your phone and on your laptop.
+                          </EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent className="flex-row justify-center gap-2">
+                          <SignInButton mode="modal"><Button className="min-h-11 px-4">Sign in</Button></SignInButton>
+                          <Button variant="outline" className="min-h-11 px-4" onClick={() => setTab("discover")}>Browse events</Button>
+                        </EmptyContent>
+                      </Empty>
+                    ) : savedStatus === "error" ? (
+                      <Empty className="py-16">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon"><RefreshCw /></EmptyMedia>
+                          <EmptyTitle>Your events could not be loaded</EmptyTitle>
+                          <EmptyDescription>Nothing has been lost. Check your connection and try again.</EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent>
+                          <Button variant="outline" className="min-h-11 px-4" onClick={() => setSavedReloadKey((value) => value + 1)}>
+                            Try again
+                          </Button>
+                        </EmptyContent>
+                      </Empty>
+                    ) : savedEvents.length === 0 ? (
+                      <Empty className="py-16">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon"><Bookmark /></EmptyMedia>
+                          <EmptyTitle>Nothing saved yet</EmptyTitle>
+                          <EmptyDescription>
+                            Save an event from Discover and it will be waiting here, soonest first.
+                          </EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent>
+                          <Button className="min-h-11 px-4" onClick={() => setTab("discover")}>Find events</Button>
+                        </EmptyContent>
+                      </Empty>
+                    ) : (
+                      <div className="border-b" aria-label="Saved events">
+                        {groupEventsByDate(savedEvents).map((group) => (
+                          <section key={group.key} aria-labelledby={`saved-${group.key}`}>
+                            <h3 id={`saved-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                              {group.label}
+                            </h3>
+                            <ol className="divide-y">
+                              {group.events.map((event) => (
+                                <EventRow
+                                  key={event.id}
+                                  event={event}
+                                  active={false}
+                                  saved
+                                  canSave={canSave}
+                                  onPreview={() => undefined}
+                                  onSelect={() => undefined}
+                                  onToggleSave={toggleSaved}
+                                />
+                              ))}
+                            </ol>
+                          </section>
+                        ))}
+                      </div>
+                    )}
+                    <p className="px-2 py-5 text-xs text-muted-foreground">
+                      Verify details with the organizer. Past events drop off this list automatically.
+                    </p>
+                  </div>
+                </section>
+              ) : (
+                <>
+                  <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
+                    <div className={`grid gap-2 ${auth.loaded && !auth.signedIn ? "sm:grid-cols-[minmax(0,1fr)_auto]" : ""}`}>
+                      <div className="relative">
+                        <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
+                        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="event-search"
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                          placeholder="Search events or venues"
+                          className="h-11 pr-11 pl-10"
+                        />
+                        {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
+                      </div>
+
+                      {auth.loaded && !auth.signedIn && (
+                        <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="h-11 w-full justify-between gap-2 px-3 font-normal sm:w-auto sm:max-w-72">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <MapPin className="shrink-0" />
+                                <span className="truncate">{locationLabel}</span>
+                              </span>
+                              <ChevronDown className="shrink-0" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
+                            <PopoverHeader>
+                              <PopoverTitle>Search location</PopoverTitle>
+                              <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
+                            </PopoverHeader>
+                            <form onSubmit={searchPlace} className="space-y-3">
+                              <div className="space-y-1.5">
+                                <Label htmlFor="place-search">City, state, or ZIP code</Label>
+                                <Input
+                                  id="place-search"
+                                  value={placeQuery}
+                                  onChange={(event) => setPlaceQuery(event.target.value)}
+                                  placeholder="Chicago, IL"
+                                  autoComplete="postal-code"
+                                  className="h-11"
+                                  autoFocus
+                                />
+                              </div>
+                              {locationNotice && (
+                                <p role="status" className="flex items-start gap-1 text-xs text-destructive">
+                                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
+                                </p>
+                              )}
+                              <div className="flex gap-2">
+                                <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+                                  {locationStatus === "searching" ? "Searching…" : "Search"}
+                                </Button>
+                                <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
+                                  <LocateFixed />
+                                </Button>
+                              </div>
+                            </form>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="max-w-full overflow-x-auto pb-1 sm:pb-0">
+                        <DateFilters value={dateFilter} onChange={setDateFilter} />
+                      </div>
+                      <div className="flex items-center justify-between gap-2 sm:justify-end">
+                        {auth.loaded && !auth.signedIn && <GameFilters value={selectedGames} onChange={setSelectedGames} catalog={catalog} />}
+                        <div>
+                          <Label htmlFor="radius" className="sr-only">Search radius</Label>
+                          <select
+                            id="radius"
+                            className="h-11 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                            value={radiusMiles}
+                            onChange={(event) => setRadiusMiles(Number(event.target.value))}
+                          >
+                            {[10, 25, 50, 100].map((radius) => <option key={radius} value={radius}>{radius} mi</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {locationNotice && (
+                      <p role="status" className="mt-2 inline-flex items-center gap-1 text-xs text-destructive empty:hidden">
+                        <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
+                      </p>
+                    )}
+                  </section>
+
+                  <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
+                    <h2 id="events-heading" className="sr-only">Events</h2>
+                    <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b py-2 text-sm">
+                      <p className="text-muted-foreground">
+                        {status === "loading" ? "Finding events…" : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel}`}
+                        {status === "preview" ? " · preview data" : ""}
+                      </p>
+                      <div className="flex lg:hidden" aria-label="Choose results view">
+                        <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"}><List /> List</Button>
+                        <Button variant="ghost" className="min-h-10 px-3" onClick={() => setViewMode("map")} aria-pressed={viewMode === "map"}><MapIcon /> Map</Button>
+                      </div>
+                    </div>
+
+                    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,0.88fr)_minmax(25rem,1.12fr)]">
+                      <div className={`${viewMode === "map" ? "hidden" : "block"} min-h-0 min-w-0 overflow-y-auto overscroll-contain lg:block`}>
+                        {status === "loading" ? (
+                          <LoadingCards />
+                        ) : visibleEvents.length === 0 ? (
+                          <Empty className="border-b py-16">
+                            <EmptyHeader>
+                              <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
+                              <EmptyTitle>{emptyState.title}</EmptyTitle>
+                              <EmptyDescription>{emptyState.description}</EmptyDescription>
+                            </EmptyHeader>
+                            <EmptyContent><Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button></EmptyContent>
+                          </Empty>
+                        ) : (
+                          <>
+                            <div className="border-b" aria-label="Event results">
+                              {eventGroups.map((group) => (
+                                <section key={group.key} aria-labelledby={`date-${group.key}`}>
+                                  <h3 id={`date-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                    {group.label}
+                                  </h3>
+                                  <ol className="divide-y">
+                                    {group.events.map((event) => (
+                                      <EventRow
+                                        key={event.id}
+                                        event={event}
+                                        active={event.id === activeEventId}
+                                        saved={savedIds.has(event.id)}
+                                        canSave={canSave}
+                                        onPreview={setHighlightedEventId}
+                                        onSelect={handleListSelect}
+                                        onToggleSave={toggleSaved}
+                                      />
+                                    ))}
+                                  </ol>
+                                </section>
+                              ))}
+                            </div>
+                            {visibleCount < visibleEvents.length && (
+                              <div className="py-5 text-center">
+                                <Button variant="outline" className="min-h-11 px-5" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                                  Load {Math.min(PAGE_SIZE, visibleEvents.length - visibleCount)} more
+                                </Button>
+                              </div>
+                            )}
+                            {resultsTruncated && visibleCount >= visibleEvents.length && (
+                              <p className="px-2 pb-1 text-xs text-muted-foreground">
+                                This area has more events than we can show at once. Narrow the distance or
+                                pick fewer games to see the rest.
+                              </p>
+                            )}
+                          </>
+                        )}
+                        <p className="px-2 py-5 text-xs text-muted-foreground">
+                          Verify details with the organizer.
+                        </p>
+                      </div>
+
+                      <div className={`${viewMode === "list" ? "hidden" : "block"} min-h-0 overflow-hidden lg:block`}>
+                        {status === "loading" ? (
+                          <div className="grid h-full min-h-0 place-items-center border bg-muted/20 text-sm text-muted-foreground">Preparing the map…</div>
+                        ) : mappableEvents.length === 0 ? (
+                          <div className="grid h-full min-h-0 place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
+                        ) : (
+                          <Suspense fallback={<div className="grid h-full min-h-0 place-items-center border bg-muted/20 text-sm text-muted-foreground">Loading the map…</div>}>
+                            <EventMap
+                              center={location}
+                              events={mappableEvents}
+                              active={viewMode === "map" || window.innerWidth >= 1024}
+                              activeEventId={activeEventId}
+                              selectedEventId={selectedEventId}
+                              onSelect={handleMapSelect}
+                              onPreview={setHighlightedEventId}
+                              onDeselect={handleClearSelectedEvent}
+                              catalog={catalog}
+                            />
+                          </Suspense>
+                        )}
+                      </div>
+                    </div>
+                  </section>
                 </>
               )}
-              <p className="px-2 py-5 text-xs text-muted-foreground">
-                Verify details with the organizer.
-              </p>
-            </div>
-
-            <div className={`${viewMode === "list" ? "hidden" : "block"} min-h-0 overflow-hidden lg:block`}>
-              {status === "loading" ? (
-                <div className="grid h-full min-h-0 place-items-center border bg-muted/20 text-sm text-muted-foreground">Preparing the map…</div>
-              ) : mappableEvents.length === 0 ? (
-                <div className="grid h-full min-h-0 place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
-              ) : (
-                <Suspense fallback={<div className="grid h-full min-h-0 place-items-center border bg-muted/20 text-sm text-muted-foreground">Loading the map…</div>}>
-                  <EventMap
-                    center={location}
-                    events={mappableEvents}
-                    active={viewMode === "map" || window.innerWidth >= 1024}
-                    activeEventId={activeEventId}
-                    selectedEventId={selectedEventId}
-                    onSelect={handleMapSelect}
-                    onPreview={setHighlightedEventId}
-                    onDeselect={handleClearSelectedEvent}
-                    catalog={catalog}
-                  />
-                </Suspense>
-              )}
-            </div>
-          </div>
-        </section>
-        </>
-        )}
-      </main>
-    </div>
+            </main>
+          </SidebarInset>
+        </div>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }
