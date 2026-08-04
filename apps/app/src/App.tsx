@@ -56,6 +56,7 @@ import {
   ChevronsUpDown,
   CircleAlert,
   Compass,
+  ExternalLink,
   List,
   LocateFixed,
   LogOut,
@@ -485,66 +486,82 @@ function EventRow({
   const recurrence = recurrenceLabel(event.series);
 
   return (
-    <li
+    <motion.div
+      layoutId={`card-${layoutIdPrefix}-${event.id}`}
+      key={`card-${layoutIdPrefix}-${event.id}`}
       id={`event-${event.id}`}
-      className={`scroll-mt-4 cursor-pointer px-3 py-3.5 transition-colors sm:px-4 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
+      onClick={() => onSelect(event.id)}
       onMouseEnter={() => onPreview(event.id)}
       onMouseLeave={() => onPreview(null)}
-      onFocusCapture={() => onPreview(event.id)}
-      onBlurCapture={(focusEvent) => {
-        if (!focusEvent.currentTarget.contains(focusEvent.relatedTarget)) onPreview(null);
-      }}
-      onClick={() => onSelect(event.id)}
+      className={`p-3.5 sm:p-4 flex flex-col md:flex-row justify-between items-start md:items-center hover:bg-muted/40 rounded-xl cursor-pointer transition-colors border border-transparent ${active ? "bg-muted/70 border-border/50" : ""}`}
     >
-      <article className="grid grid-cols-[4.75rem_minmax(0,1fr)_auto] gap-x-3">
-        <time dateTime={event.startsAt} className="pt-0.5 text-sm font-medium tabular-nums text-muted-foreground">
+      <div className="flex gap-3 items-center min-w-0 flex-1 w-full md:w-auto">
+        <time dateTime={event.startsAt} className="text-xs font-semibold tabular-nums text-muted-foreground w-14 shrink-0">
           {timeLabel(event.startsAt)}
         </time>
-
-        <div className="min-w-0">
-          <div className="flex items-start gap-2">
-            <GameIcon game={event.game} className="size-5 shrink-0 object-contain mt-0.5" />
-            <Typography variant="h3" as="h3" className="min-w-0">
-              {event.title}
-            </Typography>
+        <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50">
+            <GameIcon game={event.game} className="size-7 object-contain" />
           </div>
-          <Typography variant="body-muted" className="mt-1">
-            <span className="text-foreground font-medium">{location || "Venue to be announced"}</span>
-            {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
-          </Typography>
-          {details.length > 0 && (
-            <Typography variant="body-sm" className="mt-1">
-              {details.join(" · ")}
-            </Typography>
-          )}
-          {recurrence && (
-            <p className="mt-1.5">
-              <Badge variant="secondary" className="font-normal">{recurrence}</Badge>
-            </p>
-          )}
+        </motion.div>
+        <div className="min-w-0 flex-1">
+          <motion.h3
+            layoutId={`title-${layoutIdPrefix}-${event.id}`}
+            className="font-bold text-foreground text-sm leading-snug truncate"
+          >
+            {event.title}
+          </motion.h3>
+          <motion.p
+            layoutId={`description-${layoutIdPrefix}-${event.id}`}
+            className="text-xs text-muted-foreground mt-0.5 truncate"
+          >
+            {location || "Venue to be announced"}
+            {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : ""}
+          </motion.p>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 mt-2 md:mt-0 shrink-0 self-end md:self-center">
+        {event.sourceUrl ? (
+          <motion.a
+            layoutId={`button-${layoutIdPrefix}-${event.id}`}
+            href={event.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="px-3 py-1.5 text-xs rounded-full font-bold bg-primary text-primary-foreground flex items-center gap-1.5 shrink-0 shadow-xs hover:bg-primary/90 transition-colors"
+          >
+            <span>Event Page</span>
+            <ExternalLink className="size-3" />
+          </motion.a>
+        ) : (
+          <motion.div
+            layoutId={`button-${layoutIdPrefix}-${event.id}`}
+            className="px-3 py-1.5 text-xs rounded-full font-medium bg-secondary text-secondary-foreground shrink-0"
+          >
+            <span>Event</span>
+          </motion.div>
+        )}
 
         {canSave && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className={`size-10 self-start ${saved ? "text-primary" : "text-muted-foreground"}`}
+            className={`size-8 rounded-full ${saved ? "text-primary" : "text-muted-foreground"}`}
             aria-pressed={saved}
             aria-label={saved ? `Remove ${event.title} from My events` : `Save ${event.title} to My events`}
             title={saved ? "Saved" : "Save"}
             onClick={(clickEvent) => {
-              // Clicking the row selects the event and pans the map. Saving is a
-              // separate action that happens to live inside it.
               clickEvent.stopPropagation();
               onToggleSave(event.id);
             }}
           >
-            {saved ? <BookmarkCheck /> : <Bookmark />}
+            {saved ? <BookmarkCheck className="size-4" /> : <Bookmark className="size-4" />}
           </Button>
         )}
-      </article>
-    </li>
+      </div>
+    </motion.div>
   );
 }
 

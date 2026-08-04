@@ -83,16 +83,19 @@ export function ExpandableEventCardModal({
 
     if (event) {
       document.body.style.overflow = "hidden";
-      window.addEventListener("keydown", onKeyDown);
+    } else {
+      document.body.style.overflow = "auto";
     }
 
-    return () => {
-      document.body.style.overflow = "auto";
-      window.removeEventListener("keydown", onKeyDown);
-    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [event, onClose]);
 
   if (!event) return null;
+
+  const location = [event.venue?.name, event.venue?.city, event.venue?.region]
+    .filter(Boolean)
+    .join(" · ");
 
   const fullAddress = [
     event.venue?.address,
@@ -134,187 +137,207 @@ export function ExpandableEventCardModal({
   const recurrence = recurrenceLabel(event.series);
 
   return (
-    <AnimatePresence>
-      {event && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-10">
-          {/* Aceternity Backdrop overlay */}
+    <>
+      <AnimatePresence>
+        {event && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
-            onClick={onClose}
+            className="fixed inset-0 bg-black/50 h-full w-full z-40 backdrop-blur-xs"
           />
+        )}
+      </AnimatePresence>
 
-          {/* Aceternity Expanded Card Container */}
-          <motion.div
-            ref={ref}
-            initial={{ opacity: 0, scale: 0.92, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 12 }}
-            transition={{ type: "spring", stiffness: 350, damping: 28 }}
-            className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-border bg-card text-card-foreground shadow-2xl"
-          >
-            {/* Header with game info and close button */}
-            <div className="relative flex items-center justify-between border-b bg-muted/40 px-6 py-5">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50">
-                  <GameIcon game={event.game} className="size-7 object-contain" />
-                </div>
-                <div>
-                  <Badge variant="secondary" className="font-medium">
-                    {catalog.label(event.game)}
-                  </Badge>
-                </div>
-              </div>
+      <AnimatePresence>
+        {event ? (
+          <div className="fixed inset-0 grid place-items-center z-50 p-4 sm:p-6">
+            <motion.button
+              key={`button-close-${event.id}-${id}`}
+              layout
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.05 } }}
+              className="flex absolute top-4 right-4 z-50 items-center justify-center bg-muted text-muted-foreground hover:bg-accent hover:text-foreground rounded-full h-8 w-8 transition-colors"
+              onClick={onClose}
+              aria-label="Close modal"
+            >
+              <X className="h-4 w-4" />
+            </motion.button>
 
-              {/* Close Button */}
-              <motion.button
-                onClick={onClose}
-                aria-label="Close details"
-                className="grid size-9 place-items-center rounded-full bg-muted/80 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-hidden"
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                <X className="size-5" />
-              </motion.button>
-            </div>
-
-            {/* Scrollable Body */}
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-              {/* Title & Timing */}
-              <div>
-                <Typography variant="h1" as="h2">
-                  {event.title}
-                </Typography>
-
-                <div className="mt-3 flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-1.5 font-medium text-foreground">
-                    <Calendar className="size-4 text-primary" />
-                    <Typography variant="body" as="span" className="font-medium">
-                      {dateFormatted}
-                    </Typography>
-                  </div>
-                  <div className="flex items-center gap-1.5 font-medium text-foreground">
-                    <Clock className="size-4 text-primary" />
-                    <Typography variant="body" as="span" className="font-medium">
-                      {timeFormatted}
-                    </Typography>
-                  </div>
-                </div>
-              </div>
-
-              {/* Venue / Location Details & Extra Metadata */}
-              <div className="space-y-6">
-                <div className="rounded-2xl border bg-muted/20 p-4 space-y-2">
-                  <div className="flex items-start gap-2.5">
-                    <MapPin className="size-5 shrink-0 text-primary mt-0.5" />
-                    <div>
-                      <Typography variant="h3" as="h4">
-                        {event.venue?.name || "Venue to be announced"}
-                      </Typography>
-                      {fullAddress && (
-                        <Typography variant="caption" className="mt-0.5 block leading-relaxed">
-                          {fullAddress}
-                        </Typography>
-                      )}
-                      {event.distanceMiles !== null && (
-                        <Typography variant="caption" className="mt-1 flex items-center font-medium">
-                          <Navigation className="inline size-3 mr-1 text-primary" />
-                          {event.distanceMiles} miles away
-                        </Typography>
-                      )}
+            <motion.div
+              layoutId={`card-${layoutIdPrefix}-${event.id}`}
+              ref={ref}
+              className="w-full max-w-xl max-h-[88vh] flex flex-col bg-card border border-border text-card-foreground sm:rounded-3xl overflow-hidden shadow-2xl"
+            >
+              {/* Header with shared layout morphing elements */}
+              <div className="flex justify-between items-start p-5 border-b bg-muted/40 gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
+                    <div className="flex size-11 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50">
+                      <GameIcon game={event.game} className="size-7 object-contain" />
                     </div>
+                  </motion.div>
+                  <div className="min-w-0">
+                    <motion.h3
+                      layoutId={`title-${layoutIdPrefix}-${event.id}`}
+                      className="font-bold text-foreground text-base leading-tight truncate"
+                    >
+                      {event.title}
+                    </motion.h3>
+                    <motion.p
+                      layoutId={`description-${layoutIdPrefix}-${event.id}`}
+                      className="text-xs text-muted-foreground mt-0.5 truncate"
+                    >
+                      {location || "Venue to be announced"}
+                    </motion.p>
                   </div>
                 </div>
 
-                {/* Metadata Badges / Info */}
-                <div className="space-y-3">
-                  <Typography variant="kicker" as="h4">
-                    Event Details
-                  </Typography>
-                  <div className="flex flex-wrap gap-2">
-                    {price && (
-                      <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                        <DollarSign className="size-3 text-emerald-500" />
-                        {price}
-                      </Badge>
-                    )}
-                    {event.capacity !== null && (
-                      <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                        <Users className="size-3 text-blue-500" />
-                        Capacity: {event.capacity}
-                      </Badge>
-                    )}
-                    {recurrence && (
-                      <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                        <Repeat className="size-3 text-purple-500" />
-                        {recurrence}
-                      </Badge>
-                    )}
-                    {details.map((detail) => (
-                      <Badge key={detail} variant="secondary" className="gap-1 py-1 px-3 text-xs font-medium">
-                        <Tag className="size-3" />
-                        {detail}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer with Links & Actions */}
-            <div className="border-t bg-muted/30 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2 flex-1">
-                {event.sourceUrl && (
-                  <a
+                {event.sourceUrl ? (
+                  <motion.a
+                    layoutId={`button-${layoutIdPrefix}-${event.id}`}
                     href={event.sourceUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="px-4 py-2 text-xs rounded-full font-bold bg-primary text-primary-foreground flex items-center gap-1.5 shrink-0 shadow-xs hover:bg-primary/90 transition-colors"
                   >
-                    <span>Event Website</span>
-                    <ExternalLink className="size-4" />
-                  </a>
-                )}
-
-                {mapsUrl && (
-                  <a
-                    href={mapsUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-input bg-background px-4 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2"
+                    <span>Event Page</span>
+                    <ExternalLink className="size-3.5" />
+                  </motion.a>
+                ) : (
+                  <motion.div
+                    layoutId={`button-${layoutIdPrefix}-${event.id}`}
+                    className="px-3 py-1.5 text-xs rounded-full font-medium bg-secondary text-secondary-foreground shrink-0"
                   >
-                    <MapPin className="size-4 text-muted-foreground" />
-                    <span>Google Maps</span>
-                  </a>
+                    <span>Event</span>
+                  </motion.div>
                 )}
               </div>
 
-              {canSave && (
-                <Button
-                  type="button"
-                  variant={saved ? "secondary" : "outline"}
-                  className="h-11 gap-2 rounded-xl px-4 font-medium"
-                  onClick={() => onToggleSave(event.id)}
+              {/* Scrollable Body Content */}
+              <div className="pt-4 relative px-6 pb-6 flex-1 overflow-y-auto">
+                <motion.div
+                  layout
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex flex-col gap-6"
                 >
-                  {saved ? (
-                    <>
-                      <BookmarkCheck className="size-4 text-primary fill-primary/20" />
-                      <span>Saved</span>
-                    </>
-                  ) : (
-                    <>
-                      <Bookmark className="size-4 text-muted-foreground" />
-                      <span>Save Event</span>
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+                  {/* Category Badge & Date/Time */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <Badge variant="secondary" className="font-medium px-3 py-1 text-xs">
+                      {catalog.label(event.game)}
+                    </Badge>
+                    <div className="flex flex-wrap items-center gap-4 text-xs">
+                      <div className="flex items-center gap-1.5 font-medium text-foreground">
+                        <Calendar className="size-3.5 text-primary" />
+                        <span>{dateFormatted}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 font-medium text-foreground">
+                        <Clock className="size-3.5 text-primary" />
+                        <span>{timeFormatted}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Full Address Details */}
+                  <div className="rounded-2xl border bg-muted/20 p-4 space-y-2">
+                    <div className="flex items-start gap-2.5">
+                      <MapPin className="size-4 shrink-0 text-primary mt-0.5" />
+                      <div>
+                        <Typography variant="h3" as="h4">
+                          {event.venue?.name || "Venue to be announced"}
+                        </Typography>
+                        {fullAddress && (
+                          <Typography variant="caption" className="mt-0.5 block leading-relaxed">
+                            {fullAddress}
+                          </Typography>
+                        )}
+                        {event.distanceMiles !== null && (
+                          <Typography variant="caption" className="mt-1 flex items-center font-medium">
+                            <Navigation className="inline size-3 mr-1 text-primary" />
+                            {event.distanceMiles} miles away
+                          </Typography>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Metadata Badges */}
+                  <div className="space-y-2.5">
+                    <Typography variant="kicker" as="h4">
+                      Event Details
+                    </Typography>
+                    <div className="flex flex-wrap gap-2">
+                      {price && (
+                        <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                          <DollarSign className="size-3 text-emerald-500" />
+                          {price}
+                        </Badge>
+                      )}
+                      {event.capacity !== null && (
+                        <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                          <Users className="size-3 text-blue-500" />
+                          Capacity: {event.capacity}
+                        </Badge>
+                      )}
+                      {recurrence && (
+                        <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                          <Repeat className="size-3 text-purple-500" />
+                          {recurrence}
+                        </Badge>
+                      )}
+                      {details.map((detail) => (
+                        <Badge key={detail} variant="secondary" className="gap-1 py-1 px-3 text-xs font-medium">
+                          <Tag className="size-3" />
+                          {detail}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Actions: Google Maps & Save Event */}
+                  <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    {mapsUrl && (
+                      <a
+                        href={mapsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-input bg-background px-4 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <MapPin className="size-3.5 text-muted-foreground" />
+                        <span>Open in Google Maps</span>
+                      </a>
+                    )}
+
+                    {canSave && (
+                      <Button
+                        type="button"
+                        variant={saved ? "secondary" : "outline"}
+                        className="h-10 gap-2 rounded-xl px-4 text-xs font-medium"
+                        onClick={() => onToggleSave(event.id)}
+                      >
+                        {saved ? (
+                          <>
+                            <BookmarkCheck className="size-3.5 text-primary fill-primary/20" />
+                            <span>Saved to My Events</span>
+                          </>
+                        ) : (
+                          <>
+                            <Bookmark className="size-3.5 text-muted-foreground" />
+                            <span>Save Event</span>
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+    </>
   );
 }
