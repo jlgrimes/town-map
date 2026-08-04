@@ -9,6 +9,7 @@ import { type EventListItem, type Game } from "@town-map/contracts";
 import { X } from "lucide-react";
 import type { ExpressionSpecification, GeoJSONSource, MapLayerMouseEvent } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Typography } from "@/components/ui/typography";
 import { GameIcon } from "./GameIcon";
 import { gameMarkerUrl, type GameCatalog } from "./games";
 
@@ -134,13 +135,15 @@ function StoreSchedule({
           href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.mapsQuery)}`}
           target="_blank"
           rel="noreferrer"
-          className="text-sm font-semibold leading-snug underline-offset-4 hover:underline"
+          className="underline-offset-4 hover:underline"
         >
-          {store.name}
+          <Typography variant="h3" as="span">
+            {store.name}
+          </Typography>
         </a>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <Typography variant="caption" className="mt-0.5 block">
           {store.location ? `${store.location} · ` : ""}{store.events.length} {store.events.length === 1 ? "event" : "events"}
-        </p>
+        </Typography>
         <button
           type="button"
           onClick={onClose}
@@ -156,9 +159,11 @@ function StoreSchedule({
           if (gameEvents.length === 0) return null;
           return (
             <section key={game} className="py-2 first:pt-2 last:pb-0" aria-label={`${catalog.label(game)} events`}>
-              <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              <div className="mb-1.5 flex items-center gap-2">
                 <GameIcon game={game} className="size-4 shrink-0 object-contain" decorative />
-                <span>{catalog.label(game)}</span>
+                <Typography variant="kicker" as="span" className="normal-case">
+                  {catalog.label(game)}
+                </Typography>
               </div>
               <ol className="divide-y">
                 {gameEvents.map((event) => (
@@ -167,7 +172,7 @@ function StoreSchedule({
                     className="py-2 first:pt-0 cursor-pointer hover:bg-muted/40 rounded px-1 transition-colors"
                     onClick={() => onSelect(event.id)}
                   >
-                    <p className="text-xs tabular-nums text-muted-foreground">
+                    <Typography variant="caption" className="tabular-nums block">
                       {new Intl.DateTimeFormat(undefined, {
                         weekday: "short",
                         month: "short",
@@ -175,8 +180,10 @@ function StoreSchedule({
                         hour: "numeric",
                         minute: "2-digit",
                       }).format(new Date(event.startsAt))}
-                    </p>
-                    <p className="mt-0.5 text-sm font-medium leading-snug">{event.title}</p>
+                    </Typography>
+                    <Typography variant="h4" as="p" className="mt-0.5">
+                      {event.title}
+                    </Typography>
                   </li>
                 ))}
               </ol>

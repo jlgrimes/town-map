@@ -87,6 +87,7 @@ import { SpotlightSearch } from "@/components/ui/spotlight-search";
 import { DotBackground } from "@/components/ui/dot-background";
 import { AnimatedTooltip } from "@/components/ui/animated-tooltip";
 import { MovingBorderCard } from "@/components/ui/moving-border";
+import { Typography } from "@/components/ui/typography";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -486,7 +487,7 @@ function EventRow({
   return (
     <li
       id={`event-${event.id}`}
-      className={`scroll-mt-4 cursor-pointer px-1 py-4 transition-colors sm:px-2 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
+      className={`scroll-mt-4 cursor-pointer px-3 py-3.5 transition-colors sm:px-4 ${active ? "bg-muted/70" : "hover:bg-muted/30"}`}
       onMouseEnter={() => onPreview(event.id)}
       onMouseLeave={() => onPreview(null)}
       onFocusCapture={() => onPreview(event.id)}
@@ -502,17 +503,19 @@ function EventRow({
 
         <div className="min-w-0">
           <div className="flex items-start gap-2">
-            <GameIcon game={event.game} className="size-5 shrink-0 object-contain" />
-            <h3 className="min-w-0 text-base leading-snug font-semibold tracking-tight text-foreground">
+            <GameIcon game={event.game} className="size-5 shrink-0 object-contain mt-0.5" />
+            <Typography variant="h3" as="h3" className="min-w-0">
               {event.title}
-            </h3>
+            </Typography>
           </div>
-          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            <span className="text-foreground">{location || "Venue to be announced"}</span>
+          <Typography variant="body-muted" className="mt-1">
+            <span className="text-foreground font-medium">{location || "Venue to be announced"}</span>
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : " · Distance unavailable"}
-          </p>
+          </Typography>
           {details.length > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">{details.join(" · ")}</p>
+            <Typography variant="body-sm" className="mt-1">
+              {details.join(" · ")}
+            </Typography>
           )}
           {recurrence && (
             <p className="mt-1.5">
@@ -526,7 +529,7 @@ function EventRow({
             type="button"
             variant="ghost"
             size="icon"
-            className={`size-11 self-start ${saved ? "text-primary" : "text-muted-foreground"}`}
+            className={`size-10 self-start ${saved ? "text-primary" : "text-muted-foreground"}`}
             aria-pressed={saved}
             aria-label={saved ? `Remove ${event.title} from My events` : `Save ${event.title} to My events`}
             title={saved ? "Saved" : "Save"}
@@ -1039,9 +1042,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               <div className="flex items-center gap-3">
                 <SidebarTrigger />
                 <Separator orientation="vertical" className="h-4" />
-                <h1 className="text-sm font-semibold tracking-tight">
+                <Typography variant="h2" as="h1">
                   {tab === "my-events" ? "My events" : tab === "preferences" ? "Preferences" : "Discover"}
-                </h1>
+                </Typography>
               </div>
               {tab === "discover" && auth.loaded && !auth.signedIn && (
                 <div className="flex items-center gap-2">
@@ -1211,9 +1214,14 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                       <div className="border-b" aria-label="Saved events">
                         {groupEventsByDate(savedEvents).map((group) => (
                           <section key={group.key} aria-labelledby={`saved-${group.key}`}>
-                            <h3 id={`saved-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                            <Typography
+                              variant="kicker"
+                              as="h3"
+                              id={`saved-${group.key}`}
+                              className="border-b bg-muted/35 px-3 py-2 block"
+                            >
                               {group.label}
-                            </h3>
+                            </Typography>
                             <ol className="divide-y">
                               {group.events.map((event) => (
                                 <EventRow
@@ -1371,9 +1379,14 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                             <div className="border-b" aria-label="Event results">
                               {eventGroups.map((group) => (
                                 <section key={group.key} aria-labelledby={`date-${group.key}`}>
-                                  <h3 id={`date-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                  <Typography
+                                    variant="kicker"
+                                    as="h3"
+                                    id={`date-${group.key}`}
+                                    className="border-b bg-muted/35 px-3 py-2 block"
+                                  >
                                     {group.label}
-                                  </h3>
+                                  </Typography>
                                   <ol className="divide-y">
                                     {group.events.map((event) => (
                                       <EventRow

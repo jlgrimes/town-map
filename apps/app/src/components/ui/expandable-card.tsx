@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { type EventListItem } from "@town-map/contracts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Typography } from "@/components/ui/typography";
 import { GameIcon } from "@/GameIcon";
 import { useGameCatalog } from "@/games";
 import {
@@ -182,18 +183,22 @@ export function ExpandableEventCardModal({
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
               {/* Title & Timing */}
               <div>
-                <motion.h2 className="text-2xl font-bold tracking-tight text-foreground">
+                <Typography variant="h1" as="h2">
                   {event.title}
-                </motion.h2>
+                </Typography>
 
-                <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                <div className="mt-3 flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
                     <Calendar className="size-4 text-primary" />
-                    <span>{dateFormatted}</span>
+                    <Typography variant="body" as="span" className="font-medium">
+                      {dateFormatted}
+                    </Typography>
                   </div>
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
                     <Clock className="size-4 text-primary" />
-                    <span>{timeFormatted}</span>
+                    <Typography variant="body" as="span" className="font-medium">
+                      {timeFormatted}
+                    </Typography>
                   </div>
                 </div>
               </div>
@@ -203,19 +208,19 @@ export function ExpandableEventCardModal({
                 <div className="flex items-start gap-2.5">
                   <MapPin className="size-5 shrink-0 text-primary mt-0.5" />
                   <div>
-                    <h4 className="font-semibold text-sm text-foreground">
+                    <Typography variant="h3" as="h4">
                       {event.venue?.name || "Venue to be announced"}
-                    </h4>
+                    </Typography>
                     {fullAddress && (
-                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                      <Typography variant="caption" className="mt-0.5 block leading-relaxed">
                         {fullAddress}
-                      </p>
+                      </Typography>
                     )}
                     {event.distanceMiles !== null && (
-                      <p className="text-xs text-muted-foreground font-medium mt-1">
+                      <Typography variant="caption" className="mt-1 flex items-center font-medium">
                         <Navigation className="inline size-3 mr-1 text-primary" />
                         {event.distanceMiles} miles away
-                      </p>
+                      </Typography>
                     )}
                   </div>
                 </div>
@@ -223,9 +228,9 @@ export function ExpandableEventCardModal({
 
               {/* Metadata Badges / Info */}
               <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Typography variant="kicker" as="h4">
                   Event Details
-                </h4>
+                </Typography>
                 <div className="flex flex-wrap gap-2">
                   {price && (
                     <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
@@ -310,3 +315,4 @@ export function ExpandableEventCardModal({
     </AnimatePresence>
   );
 }
+
