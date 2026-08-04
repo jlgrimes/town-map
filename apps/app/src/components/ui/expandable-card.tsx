@@ -163,26 +163,26 @@ export function ExpandableEventCardModal({
             <motion.div
               layoutId={`card-${layoutIdPrefix}-${event.id}`}
               ref={ref}
-              className="w-full max-w-[500px] h-full md:h-fit md:max-h-[90%] flex flex-col bg-white dark:bg-neutral-900 sm:rounded-3xl overflow-hidden text-neutral-800 dark:text-neutral-200 shadow-2xl"
+              className="w-full max-w-[520px] h-full md:h-fit md:max-h-[90%] flex flex-col bg-card border border-border sm:rounded-3xl overflow-hidden text-card-foreground shadow-2xl"
             >
               <div>
-                <div className="flex justify-between items-start p-4 border-b dark:border-neutral-800">
+                <div className="flex justify-between items-start p-5 border-b bg-muted/40">
                   <div className="flex gap-4 flex-col md:flex-row items-start">
                     <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`}>
-                      <div className="h-14 w-14 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center p-2 border border-neutral-200 dark:border-neutral-700 shrink-0">
+                      <div className="h-14 w-14 rounded-xl bg-background flex items-center justify-center p-2 border border-border shrink-0 shadow-xs ring-1 ring-border/50">
                         <GameIcon game={event.game} className="size-10 object-contain" />
                       </div>
                     </motion.div>
                     <div>
                       <motion.h3
                         layoutId={`title-${layoutIdPrefix}-${event.id}`}
-                        className="font-bold text-neutral-700 dark:text-neutral-200 text-lg leading-tight"
+                        className="font-bold text-foreground text-lg leading-tight"
                       >
                         {event.title}
                       </motion.h3>
                       <motion.p
                         layoutId={`description-${layoutIdPrefix}-${event.id}`}
-                        className="text-neutral-600 dark:text-neutral-400 text-sm mt-0.5"
+                        className="text-muted-foreground text-sm mt-0.5"
                       >
                         {location || "Venue to be announced"}
                       </motion.p>
@@ -195,27 +195,27 @@ export function ExpandableEventCardModal({
                       href={event.sourceUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-4 py-3 text-sm rounded-full font-bold bg-green-500 hover:bg-green-600 text-white shrink-0 transition-colors"
+                      className="px-4 py-2.5 text-xs rounded-full font-bold bg-primary text-primary-foreground hover:bg-primary/90 shrink-0 transition-colors shadow-xs"
                     >
                       Event Page
                     </motion.a>
                   ) : (
                     <motion.button
                       layoutId={`button-${layoutIdPrefix}-${event.id}`}
-                      className="px-4 py-2 text-sm rounded-full font-bold bg-gray-100 dark:bg-neutral-800 text-black dark:text-white shrink-0"
+                      className="px-4 py-2 text-xs rounded-full font-bold bg-secondary text-secondary-foreground shrink-0"
                     >
                       Event
                     </motion.button>
                   )}
                 </div>
 
-                <div className="pt-4 relative px-4">
+                <div className="pt-4 relative px-5">
                   <motion.div
-                    layout
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="text-neutral-600 text-xs md:text-sm lg:text-base md:h-fit pb-6 flex flex-col items-start gap-4 overflow-auto dark:text-neutral-400"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="text-muted-foreground text-xs md:text-sm lg:text-base md:h-fit pb-6 flex flex-col items-start gap-4 overflow-auto"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 w-full pt-1">
                       <Badge variant="secondary" className="font-medium">

@@ -493,31 +493,32 @@ function EventRow({
       onClick={() => onSelect(event.id)}
       onMouseEnter={() => onPreview(event.id)}
       onMouseLeave={() => onPreview(null)}
-      className="p-4 flex flex-col md:flex-row justify-between items-center hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl cursor-pointer"
+      className={`p-3.5 sm:p-4 flex flex-col md:flex-row justify-between items-start md:items-center hover:bg-muted/40 rounded-2xl cursor-pointer transition-colors border border-transparent ${active ? "bg-muted/70 border-border/50" : ""}`}
     >
-      <div className="flex gap-4 flex-col md:flex-row items-center min-w-0">
-        <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`}>
-          <div className="h-14 w-14 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center p-2 border border-neutral-200 dark:border-neutral-700 shrink-0">
-            <GameIcon game={event.game} className="size-10 object-contain" />
+      <div className="flex gap-3.5 items-center min-w-0 flex-1 w-full md:w-auto">
+        <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
+          <div className="h-12 w-12 rounded-xl bg-background flex items-center justify-center p-1.5 border border-border shadow-xs ring-1 ring-border/50 shrink-0">
+            <GameIcon game={event.game} className="size-8 object-contain" />
           </div>
         </motion.div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <motion.h3
             layoutId={`title-${layoutIdPrefix}-${event.id}`}
-            className="font-medium text-neutral-800 dark:text-neutral-200 text-center md:text-left text-base"
+            className="font-bold text-foreground text-sm leading-snug truncate"
           >
             {event.title}
           </motion.h3>
           <motion.p
             layoutId={`description-${layoutIdPrefix}-${event.id}`}
-            className="text-neutral-600 dark:text-neutral-400 text-center md:text-left text-sm"
+            className="text-xs text-muted-foreground mt-0.5 truncate"
           >
             {location || "Venue to be announced"}
+            {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : ""}
           </motion.p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mt-4 md:mt-0 shrink-0">
+      <div className="flex items-center gap-2 mt-2 md:mt-0 shrink-0 self-end md:self-center">
         {event.sourceUrl ? (
           <motion.a
             layoutId={`button-${layoutIdPrefix}-${event.id}`}
@@ -525,14 +526,14 @@ function EventRow({
             target="_blank"
             rel="noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="px-4 py-2 text-sm rounded-full font-bold bg-gray-100 hover:bg-green-500 hover:text-white text-black dark:bg-neutral-800 dark:text-white transition-colors"
+            className="px-3.5 py-1.5 text-xs rounded-full font-bold bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 shrink-0 shadow-xs transition-colors"
           >
             Event Page
           </motion.a>
         ) : (
           <motion.button
             layoutId={`button-${layoutIdPrefix}-${event.id}`}
-            className="px-4 py-2 text-sm rounded-full font-bold bg-gray-100 hover:bg-green-500 hover:text-white text-black dark:bg-neutral-800 dark:text-white transition-colors"
+            className="px-3.5 py-1.5 text-xs rounded-full font-bold bg-secondary text-secondary-foreground shrink-0 transition-colors"
           >
             Event
           </motion.button>
