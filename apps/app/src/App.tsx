@@ -499,32 +499,23 @@ function EventRow({
         <time dateTime={event.startsAt} className="text-xs font-semibold tabular-nums text-muted-foreground w-14 shrink-0">
           {timeLabel(event.startsAt)}
         </time>
-        <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50">
-            <GameIcon game={event.game} className="size-7 object-contain" />
-          </div>
-        </motion.div>
+        <div className="flex size-10 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50 shrink-0">
+          <GameIcon game={event.game} className="size-7 object-contain" />
+        </div>
         <div className="min-w-0 flex-1">
-          <motion.h3
-            layoutId={`title-${layoutIdPrefix}-${event.id}`}
-            className="font-bold text-foreground text-sm leading-snug truncate"
-          >
+          <h3 className="font-bold text-foreground text-sm leading-snug truncate">
             {event.title}
-          </motion.h3>
-          <motion.p
-            layoutId={`description-${layoutIdPrefix}-${event.id}`}
-            className="text-xs text-muted-foreground mt-0.5 truncate"
-          >
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
             {location || "Venue to be announced"}
             {event.distanceMiles !== null ? ` · ${event.distanceMiles} mi away` : ""}
-          </motion.p>
+          </p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 mt-2 md:mt-0 shrink-0 self-end md:self-center">
         {event.sourceUrl ? (
-          <motion.a
-            layoutId={`button-${layoutIdPrefix}-${event.id}`}
+          <a
             href={event.sourceUrl}
             target="_blank"
             rel="noreferrer"
@@ -533,14 +524,11 @@ function EventRow({
           >
             <span>Event Page</span>
             <ExternalLink className="size-3" />
-          </motion.a>
+          </a>
         ) : (
-          <motion.div
-            layoutId={`button-${layoutIdPrefix}-${event.id}`}
-            className="px-3 py-1.5 text-xs rounded-full font-medium bg-secondary text-secondary-foreground shrink-0"
-          >
+          <div className="px-3 py-1.5 text-xs rounded-full font-medium bg-secondary text-secondary-foreground shrink-0">
             <span>Event</span>
-          </motion.div>
+          </div>
         )}
 
         {canSave && (

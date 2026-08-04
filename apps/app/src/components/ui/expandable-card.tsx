@@ -170,33 +170,24 @@ export function ExpandableEventCardModal({
               ref={ref}
               className="w-full max-w-xl max-h-[88vh] flex flex-col bg-card border border-border text-card-foreground sm:rounded-3xl overflow-hidden shadow-2xl"
             >
-              {/* Header with shared layout morphing elements */}
+              {/* Header with clean unified container morphing */}
               <div className="flex justify-between items-start p-5 border-b bg-muted/40 gap-4">
                 <div className="flex items-center gap-3 min-w-0">
-                  <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
-                    <div className="flex size-11 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50">
-                      <GameIcon game={event.game} className="size-7 object-contain" />
-                    </div>
-                  </motion.div>
+                  <div className="flex size-11 items-center justify-center rounded-xl bg-background p-1.5 shadow-xs ring-1 ring-border/50 shrink-0">
+                    <GameIcon game={event.game} className="size-7 object-contain" />
+                  </div>
                   <div className="min-w-0">
-                    <motion.h3
-                      layoutId={`title-${layoutIdPrefix}-${event.id}`}
-                      className="font-bold text-foreground text-base leading-tight truncate"
-                    >
+                    <h3 className="font-bold text-foreground text-base leading-tight truncate">
                       {event.title}
-                    </motion.h3>
-                    <motion.p
-                      layoutId={`description-${layoutIdPrefix}-${event.id}`}
-                      className="text-xs text-muted-foreground mt-0.5 truncate"
-                    >
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
                       {location || "Venue to be announced"}
-                    </motion.p>
+                    </p>
                   </div>
                 </div>
 
                 {event.sourceUrl ? (
-                  <motion.a
-                    layoutId={`button-${layoutIdPrefix}-${event.id}`}
+                  <a
                     href={event.sourceUrl}
                     target="_blank"
                     rel="noreferrer"
@@ -204,14 +195,11 @@ export function ExpandableEventCardModal({
                   >
                     <span>Event Page</span>
                     <ExternalLink className="size-3.5" />
-                  </motion.a>
+                  </a>
                 ) : (
-                  <motion.div
-                    layoutId={`button-${layoutIdPrefix}-${event.id}`}
-                    className="px-3 py-1.5 text-xs rounded-full font-medium bg-secondary text-secondary-foreground shrink-0"
-                  >
+                  <div className="px-3 py-1.5 text-xs rounded-full font-medium bg-secondary text-secondary-foreground shrink-0">
                     <span>Event</span>
-                  </motion.div>
+                  </div>
                 )}
               </div>
 
