@@ -464,6 +464,8 @@ function EventRow({
   ].filter((detail): detail is string => detail !== null);
   const recurrence = recurrenceLabel(event.series);
 
+  const formattedTime = timeLabel(event.startsAt);
+
   return (
     <motion.div
       layoutId={`card-${layoutIdPrefix}-${event.id}`}
@@ -475,6 +477,9 @@ function EventRow({
       className={`p-3 sm:p-4 flex flex-row items-center justify-between gap-3 hover:bg-muted/40 rounded-2xl cursor-pointer transition-colors border border-transparent ${active ? "bg-muted/70 border-border/50" : ""}`}
     >
       <div className="flex gap-3 items-center min-w-0 flex-1">
+        <motion.div layout className="w-16 shrink-0 text-xs font-semibold text-muted-foreground whitespace-nowrap">
+          {formattedTime}
+        </motion.div>
         <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
           <div className="h-12 w-12 rounded-xl bg-background flex items-center justify-center p-1.5 border border-border shadow-xs ring-1 ring-border/50 shrink-0">
             <GameIcon game={event.game} className="size-8 object-contain" />
