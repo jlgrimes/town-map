@@ -90,7 +90,18 @@ async function authorizationHeaders(getToken: () => Promise<string | null>) {
   };
 }
 
-export function normalizeUserPreferences(value: unknown): UserPreferences {
+/**
+ * Reads a preferences response, tolerating an API old enough to predate
+ * onboarding and return only `homeAddress`.
+ *
+ * `fallback` supplies what the older shape omits. Loading has nothing better to
+ * assume than empty; saving knows what it just asked the server to store, and
+ * using that keeps a successful save from appearing to reset the account.
+ */
+export function normalizeUserPreferences(
+  value: unknown,
+  fallback: { selectedGames?: Game[]; onboardingCompleted?: boolean } = {},
+): UserPreferences {
   const current = UserPreferencesSchema.safeParse(value);
   if (current.success) return current.data;
 
@@ -100,8 +111,8 @@ export function normalizeUserPreferences(value: unknown): UserPreferences {
 
   const legacy = UserPreferencesSchema.safeParse({
     homeAddress: value.homeAddress,
-    selectedGames: [],
-    onboardingCompleted: false,
+    selectedGames: fallback.selectedGames ?? [],
+    onboardingCompleted: fallback.onboardingCompleted ?? false,
   });
   if (!legacy.success) throw new Error("Preferences API returned invalid data");
   return legacy.data;
@@ -147,5 +158,10 @@ export async function saveUserPreferences(
     const detail = await errorDetail(response);
     throw new Error(detail ?? `Preferences API returned ${response.status}`);
   }
-  return UserPreferencesSchema.parse(await response.json());
+  // Reads through the same tolerance as loading. Parsing strictly here meant a
+  // save that the API had already accepted still failed in the client.
+  return normalizeUserPreferences(await response.json(), {
+    selectedGames: preferences.selectedGames,
+    onboardingCompleted: true,
+  });
 }
