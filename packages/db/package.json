@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsup src/index.ts src/migrate.ts src/migrations.ts --format esm --dts",
     "check": "tsc --noEmit",
-    "migrate": "tsx src/migrate.ts",
+    "migrate": "node dist/migrate.js",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

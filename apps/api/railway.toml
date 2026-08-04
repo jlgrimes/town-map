@@ -4,7 +4,7 @@ buildCommand = "pnpm --filter @town-map/api... build"
 watchPatterns = ["/apps/api/**", "/packages/contracts/**", "/packages/db/**", "/pnpm-lock.yaml"]
 
 [deploy]
-preDeployCommand = "pnpm db:migrate"
+preDeployCommand = "pnpm --filter @town-map/db migrate"
 startCommand = "pnpm --filter @town-map/api start"
 healthcheckPath = "/health"
 healthcheckTimeout = 60

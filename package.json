@@ -20,7 +20,7 @@
     "build": "turbo build",
     "check": "turbo check",
     "dev": "turbo dev",
-    "db:migrate": "pnpm --filter @town-map/db migrate",
+    "db:migrate": "pnpm --filter @town-map/db build && pnpm --filter @town-map/db migrate",
     "test": "turbo test"
   },
   "devDependencies": {
