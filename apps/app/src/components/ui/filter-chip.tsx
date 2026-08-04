@@ -39,12 +39,13 @@ function FilterChipSubject({ className, ...props }: React.ComponentProps<"span">
   );
 }
 
-/** How subject relates to value — "is", "within", "is any of". */
-function FilterChipOperator({ className, ...props }: React.ComponentProps<"span">) {
+/** How subject relates to value — "is", "within", "is any of", "under". */
+function FilterChipOperator({ className, ...props }: React.ComponentProps<"button">) {
   return (
-    <span
+    <button
+      type="button"
       data-slot="filter-chip-operator"
-      className={cn(segmentClasses, "select-none text-muted-foreground", className)}
+      className={cn(segmentClasses, interactiveClasses, "text-muted-foreground font-normal", className)}
       {...props}
     />
   );

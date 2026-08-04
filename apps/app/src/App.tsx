@@ -472,9 +472,9 @@ function EventRow({
       onClick={() => onSelect(event.id)}
       onMouseEnter={() => onPreview(event.id)}
       onMouseLeave={() => onPreview(null)}
-      className={`p-3.5 sm:p-4 flex flex-col md:flex-row justify-between items-start md:items-center hover:bg-muted/40 rounded-2xl cursor-pointer transition-colors border border-transparent ${active ? "bg-muted/70 border-border/50" : ""}`}
+      className={`p-3 sm:p-4 flex flex-row items-center justify-between gap-3 hover:bg-muted/40 rounded-2xl cursor-pointer transition-colors border border-transparent ${active ? "bg-muted/70 border-border/50" : ""}`}
     >
-      <div className="flex gap-3.5 items-center min-w-0 flex-1 w-full md:w-auto">
+      <div className="flex gap-3 items-center min-w-0 flex-1">
         <motion.div layoutId={`image-${layoutIdPrefix}-${event.id}`} className="shrink-0">
           <div className="h-12 w-12 rounded-xl bg-background flex items-center justify-center p-1.5 border border-border shadow-xs ring-1 ring-border/50 shrink-0">
             <GameIcon game={event.game} className="size-8 object-contain" />
@@ -498,7 +498,7 @@ function EventRow({
 
       {/* Same reason as the text block: the bookmark button has no layoutId of its own, so
           this needs to be a projection node or it distorts as the card shrinks back. */}
-      <motion.div layout className="flex items-center gap-2 mt-2 md:mt-0 shrink-0 self-end md:self-center">
+      <motion.div layout className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-center">
         {event.sourceUrl ? (
           <motion.a
             layoutId={`button-${layoutIdPrefix}-${event.id}`}
@@ -546,7 +546,7 @@ function LoadingCards() {
     <div role="status" aria-label="Finding nearby events" className="divide-y border-y">
       <span className="sr-only">Finding nearby events…</span>
       {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} aria-hidden="true" className="h-36 animate-pulse bg-muted/35" />
+        <div key={index} aria-hidden="true" className="h-16 animate-pulse bg-muted/35" />
       ))}
     </div>
   );
@@ -1407,7 +1407,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                                       <EventRow
                                         key={event.id}
                                         event={event}
-                                        active={event.id === activeEventId}
+                                        active={false}
                                         saved={savedIds.has(event.id)}
                                         canSave={canSave}
                                         layoutIdPrefix="discover"
