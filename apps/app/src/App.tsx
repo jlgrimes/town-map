@@ -57,6 +57,7 @@ import {
   CircleAlert,
   Compass,
   ExternalLink,
+  Home,
   List,
   LocateFixed,
   LogOut,
@@ -70,7 +71,7 @@ import {
   X,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import {
   fetchEvents,
@@ -870,7 +871,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     }
   }
 
-  async function useCurrentLocation() {
+  const useCurrentLocation = useCallback(async () => {
     setLocationStatus("locating");
     setLocationNotice(null);
     try {
@@ -889,7 +890,41 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     } finally {
       setLocationStatus("idle");
     }
-  }
+  }, []);
+
+  const autoLocatedRef = useRef(false);
+
+  useEffect(() => {
+    if (!auth.enabled || !auth.loaded) return;
+    if (!auth.signedIn) {
+      const hasUrlLocation = initialParams.has("place") || (initialParams.has("lat") && initialParams.has("lng"));
+      if (!hasUrlLocation && !autoLocatedRef.current) {
+        autoLocatedRef.current = true;
+        useCurrentLocation();
+      }
+    }
+  }, [auth.enabled, auth.loaded, auth.signedIn, useCurrentLocation]);
+
+  const resetToSavedHome = useCallback(async () => {
+    if (!homeAddress) return;
+    setLocationStatus("searching");
+    setLocationNotice(null);
+    try {
+      const result = await geocodePlace(homeAddress);
+      if (!result) {
+        setLocationNotice("We couldn't locate your home address right now.");
+        return;
+      }
+      setLocation({ latitude: result.latitude, longitude: result.longitude });
+      setLocationLabel(result.label);
+      setPlaceQuery(homeAddress);
+      setLocationEditorOpen(false);
+    } catch {
+      setLocationNotice("We couldn't locate your home address right now.");
+    } finally {
+      setLocationStatus("idle");
+    }
+  }, [homeAddress]);
 
   async function saveAccountPreferences(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1105,9 +1140,17 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                   {tab === "my-events" ? "My events" : tab === "preferences" ? "Preferences" : "Discover"}
                 </Typography>
               </div>
-              {tab === "discover" && auth.loaded && !auth.signedIn && (
+              {tab === "discover" && auth.loaded && (
                 <div className="flex items-center gap-2">
-                  <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
+                  <Popover
+                    open={locationEditorOpen}
+                    onOpenChange={(open) => {
+                      setLocationEditorOpen(open);
+                      if (open) {
+                        setPlaceQuery(locationLabel === "Current location" ? "" : locationLabel);
+                      }
+                    }}
+                  >
                     <PopoverTrigger asChild>
                       <Button variant="outline" size="sm" className="h-9 gap-2 font-normal">
                         <MapPin className="size-4 shrink-0 text-muted-foreground" />
@@ -1142,10 +1185,23 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                           <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
                             {locationStatus === "searching" ? "Searching…" : "Search"}
                           </Button>
-                          <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
+                          <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
                             <LocateFixed />
                           </Button>
                         </div>
+                        {auth.signedIn && homeAddress && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="w-full text-xs text-muted-foreground hover:text-foreground mt-1 justify-start px-1"
+                            onClick={resetToSavedHome}
+                            disabled={locationStatus === "searching"}
+                          >
+                            <Home className="mr-1.5 size-3.5" />
+                            Use saved home ({homeAddress})
+                          </Button>
+                        )}
                       </form>
                     </PopoverContent>
                   </Popover>
@@ -1308,69 +1364,20 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               ) : (
                 <>
                   <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
-                    <div className={`grid gap-2 ${auth.loaded && !auth.signedIn ? "sm:grid-cols-[minmax(0,1fr)_auto]" : ""}`}>
-                      <SpotlightSearch className="w-full">
-                        <div className="relative">
-                          <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
-                          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground z-20" />
-                          <Input
-                            id="event-search"
-                            value={query}
-                            onChange={(event) => setQuery(event.target.value)}
-                            placeholder="Search events or venues"
-                            className="h-11 pr-11 pl-10"
-                          />
-                          {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
-                        </div>
-                      </SpotlightSearch>
-
-                      {auth.loaded && !auth.signedIn && (
-                        <Popover open={locationEditorOpen} onOpenChange={setLocationEditorOpen}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="h-11 w-full justify-between gap-2 px-3 font-normal sm:w-auto sm:max-w-72">
-                              <span className="flex min-w-0 items-center gap-2">
-                                <MapPin className="shrink-0" />
-                                <span className="truncate">{locationLabel}</span>
-                              </span>
-                              <ChevronDown className="shrink-0" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
-                            <PopoverHeader>
-                              <PopoverTitle>Search location</PopoverTitle>
-                              <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
-                            </PopoverHeader>
-                            <form onSubmit={searchPlace} className="space-y-3">
-                              <div className="space-y-1.5">
-                                <Label htmlFor="place-search">City, state, or ZIP code</Label>
-                                <Input
-                                  id="place-search"
-                                  value={placeQuery}
-                                  onChange={(event) => setPlaceQuery(event.target.value)}
-                                  placeholder="Chicago, IL"
-                                  autoComplete="postal-code"
-                                  className="h-11"
-                                  autoFocus
-                                />
-                              </div>
-                              {locationNotice && (
-                                <p role="status" className="flex items-start gap-1 text-xs text-destructive">
-                                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
-                                </p>
-                              )}
-                              <div className="flex gap-2">
-                                <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
-                                  {locationStatus === "searching" ? "Searching…" : "Search"}
-                                </Button>
-                                <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location">
-                                  <LocateFixed />
-                                </Button>
-                              </div>
-                            </form>
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                    </div>
+                    <SpotlightSearch className="w-full">
+                      <div className="relative">
+                        <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
+                        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground z-20" />
+                        <Input
+                          id="event-search"
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                          placeholder="Search events or venues"
+                          className="h-11 pr-11 pl-10"
+                        />
+                        {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
+                      </div>
+                    </SpotlightSearch>
 
                     <FilterBar
                       className="mt-2"
