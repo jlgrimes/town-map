@@ -142,6 +142,15 @@ export const EventQuerySchema = z.object({
   categories: z.array(CategorySchema).default([]),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+  /**
+   * Free-text query, matched against the event's title, game, format, type and
+   * venue. Parsed by PostgreSQL as a web search string, so quoted phrases and
+   * `-exclusions` work and no input can be malformed enough to error.
+   *
+   * Bounded well above any real query: the length exists to keep a pathological
+   * string out of the parser, not to constrain what someone can type.
+   */
+  q: z.string().trim().min(1).max(200).optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
   radiusMiles: z.coerce.number().positive().max(500).default(50),
@@ -159,6 +168,21 @@ export const EventPageSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type EventPage = z.infer<typeof EventPageSchema>;
+
+/** A saved event is addressed by the event's own id, which is a UUID. */
+export const EventIdSchema = z.string().uuid();
+
+/**
+ * Response of `GET /v1/saved-events`, ordered soonest first.
+ *
+ * Uncursored, unlike `EventPage`: a saved list is bounded by how many events one
+ * person chose to save, not by how many exist near them.
+ */
+export const SavedEventsSchema = z.object({
+  events: z.array(EventListItemSchema),
+  count: z.number().int().nonnegative(),
+});
+export type SavedEvents = z.infer<typeof SavedEventsSchema>;
 
 export const CoverageRegionStatusSchema = z.enum([
   "disabled",

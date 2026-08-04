@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { clerkClient, clerkPlugin, getAuth } from "@clerk/fastify";
-import { EventQuerySchema, UserPreferencesUpdateSchema, type GameRegistry } from "@town-map/contracts";
+import { EventIdSchema, EventQuerySchema, UserPreferencesUpdateSchema, type GameRegistry } from "@town-map/contracts";
 import {
   closePool,
   getPool,
@@ -10,7 +10,10 @@ import {
   listCoverage,
   listEvents,
   listGameRegistry,
+  listSavedEvents,
+  saveEvent,
   saveUserPreferences,
+  unsaveEvent,
 } from "@town-map/db";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 
@@ -45,7 +48,7 @@ export async function createApp(): Promise<FastifyInstance> {
   };
 
   await app.register(cors, {
-    methods: ["GET", "HEAD", "POST", "PUT", "OPTIONS"],
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
     origin(origin, callback) {
       if (!origin || configuredOrigins.includes(origin) || nativeOrigins.has(origin)) callback(null, true);
       else callback(new Error("Origin is not allowed"), false);
@@ -260,6 +263,52 @@ export async function createApp(): Promise<FastifyInstance> {
       request.log.error({ error, userId }, "Stored preferences but failed to mirror them to Clerk metadata");
     }
     return preferences;
+  });
+
+  /**
+   * The saved list is small and personal, so it is served whole rather than
+   * cursored, and never cached anywhere shared.
+   */
+  app.get("/v1/saved-events", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const userId = authenticatedUserId(request, reply);
+    if (!userId) return;
+    if (!process.env.DATABASE_URL) {
+      return reply.code(503).send({ error: "The event database is not configured." });
+    }
+    return listSavedEvents(userId);
+  });
+
+  // PUT rather than POST: saving an event the user has already saved is the same
+  // request twice, and must not be an error the second time.
+  app.put<{ Params: { eventId: string } }>("/v1/saved-events/:eventId", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const userId = authenticatedUserId(request, reply);
+    if (!userId) return;
+    const eventId = EventIdSchema.safeParse(request.params.eventId);
+    if (!eventId.success) return reply.code(400).send({ error: "Invalid event id." });
+    if (!process.env.DATABASE_URL) {
+      return reply.code(503).send({ error: "The event database is not configured." });
+    }
+    // A save can race a collector withdrawing the event, and an id from a stale
+    // client page is the ordinary case rather than a broken one.
+    if (!await saveEvent(userId, eventId.data)) {
+      return reply.code(404).send({ error: "That event is no longer available." });
+    }
+    return reply.code(204).send();
+  });
+
+  app.delete<{ Params: { eventId: string } }>("/v1/saved-events/:eventId", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const userId = authenticatedUserId(request, reply);
+    if (!userId) return;
+    const eventId = EventIdSchema.safeParse(request.params.eventId);
+    if (!eventId.success) return reply.code(400).send({ error: "Invalid event id." });
+    if (!process.env.DATABASE_URL) {
+      return reply.code(503).send({ error: "The event database is not configured." });
+    }
+    await unsaveEvent(userId, eventId.data);
+    return reply.code(204).send();
   });
 
   app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {

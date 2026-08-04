@@ -22,8 +22,11 @@ import {
 } from "@/components/ui/popover";
 import { recurrenceLabel, type EventListItem, type Game } from "@town-map/contracts";
 import {
+  Bookmark,
+  BookmarkCheck,
   ChevronDown,
   CircleAlert,
+  Compass,
   List,
   LocateFixed,
   Map as MapIcon,
@@ -34,7 +37,15 @@ import {
   X,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { fetchEvents, fetchUserPreferences, geocodePlace, saveUserPreferences } from "./api";
+import {
+  fetchEvents,
+  fetchSavedEvents,
+  fetchUserPreferences,
+  geocodePlace,
+  saveEvent,
+  saveUserPreferences,
+  unsaveEvent,
+} from "./api";
 import { demoEvents } from "./demo-events";
 import { GameIcon } from "./GameIcon";
 import { useGameCatalog, type GameCatalog } from "./games";
@@ -43,8 +54,17 @@ const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: mo
 
 const PAGE_SIZE = 24;
 
+/**
+ * How long typing has to settle before a search reaches the API. Text search
+ * used to filter events already in memory, so it cost nothing per keystroke;
+ * now that it is a query, this keeps a typed word to one round trip instead of
+ * one per character.
+ */
+const SEARCH_DEBOUNCE_MS = 250;
+
 type DateFilter = "all" | "today" | "tomorrow" | "week";
 type ViewMode = "list" | "map";
+type Tab = "my-events" | "discover";
 
 const DATE_OPTIONS: Array<{ value: DateFilter; label: string }> = [
   { value: "all", label: "All upcoming" },
@@ -95,6 +115,19 @@ function initialGames(): Game[] | null {
 function initialDateFilter(): DateFilter {
   const value = initialParams.get("date");
   return DATE_OPTIONS.some((option) => option.value === value) ? value as DateFilter : "all";
+}
+
+/**
+ * The app opens on "My events": what a user chose is worth more than a list they
+ * have not looked at yet.
+ *
+ * That tab only means anything with accounts configured, so a build without
+ * Clerk opens on Discover rather than on a tab it can never fill.
+ */
+function initialTab(authEnabled: boolean): Tab {
+  if (!authEnabled) return "discover";
+  const value = initialParams.get("tab");
+  return value === "discover" || value === "my-events" ? value : "my-events";
 }
 
 function initialNumber(name: string, fallback: number) {
@@ -267,13 +300,20 @@ function DateFilters({ value, onChange }: { value: DateFilter; onChange: (value:
 function EventRow({
   event,
   active,
+  saved,
+  canSave,
   onPreview,
   onSelect,
+  onToggleSave,
 }: {
   event: EventListItem;
   active: boolean;
+  saved: boolean;
+  /** False when nobody is signed in, in which case there is nowhere to save to. */
+  canSave: boolean;
   onPreview: (eventId: string | null) => void;
   onSelect: (eventId: string) => void;
+  onToggleSave: (eventId: string) => void;
 }) {
   const location = [event.venue?.name, event.venue?.city, event.venue?.region].filter(Boolean).join(" · ");
   const details = [
@@ -302,7 +342,7 @@ function EventRow({
       }}
       onClick={() => onSelect(event.id)}
     >
-      <article className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-x-3">
+      <article className="grid grid-cols-[4.75rem_minmax(0,1fr)_auto] gap-x-3">
         <time dateTime={event.startsAt} className="pt-0.5 text-sm font-medium tabular-nums text-muted-foreground">
           {timeLabel(event.startsAt)}
         </time>
@@ -349,6 +389,26 @@ function EventRow({
             </p>
           )}
         </div>
+
+        {canSave && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={`size-11 self-start ${saved ? "text-primary" : "text-muted-foreground"}`}
+            aria-pressed={saved}
+            aria-label={saved ? `Remove ${event.title} from My events` : `Save ${event.title} to My events`}
+            title={saved ? "Saved" : "Save"}
+            onClick={(clickEvent) => {
+              // Clicking the row selects the event and pans the map. Saving is a
+              // separate action that happens to live inside it.
+              clickEvent.stopPropagation();
+              onToggleSave(event.id);
+            }}
+          >
+            {saved ? <BookmarkCheck /> : <Bookmark />}
+          </Button>
+        )}
       </article>
     </li>
   );
@@ -408,6 +468,67 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(() => initialTab(auth.enabled));
+  const [savedEvents, setSavedEvents] = useState<EventListItem[]>([]);
+  const [savedStatus, setSavedStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [savedReloadKey, setSavedReloadKey] = useState(0);
+  // Saving is an account feature, so there is nothing to write to until Clerk has
+  // both loaded and reported somebody signed in.
+  const canSave = auth.enabled && auth.loaded && auth.signedIn;
+  const savedIds = useMemo(() => new Set(savedEvents.map((event) => event.id)), [savedEvents]);
+
+  useEffect(() => {
+    if (!auth.enabled || !auth.loaded) return;
+    if (!auth.signedIn) {
+      // Signing out has to clear the list rather than leave the previous
+      // account's saves on screen for the next person to use this browser.
+      setSavedEvents([]);
+      setSavedStatus("idle");
+      setSavedNotice(null);
+      return;
+    }
+    const controller = new AbortController();
+    setSavedStatus("loading");
+    fetchSavedEvents(auth.getToken, controller.signal)
+      .then((saved) => {
+        setSavedEvents(saved.events);
+        setSavedStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSavedStatus("error");
+      });
+    return () => controller.abort();
+  }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, savedReloadKey]);
+
+  /**
+   * Applied locally before the request is sent. The icon is the only feedback a
+   * save has, and waiting a round trip to move it reads as a dropped tap; a
+   * failure puts the previous list back and says so.
+   */
+  const toggleSaved = useCallback(async (eventId: string) => {
+    if (!canSave) return;
+    const previous = savedEvents;
+    const wasSaved = previous.some((candidate) => candidate.id === eventId);
+    const event = previous.find((candidate) => candidate.id === eventId)
+      ?? events.find((candidate) => candidate.id === eventId);
+    if (!event) return;
+    setSavedNotice(null);
+    setSavedEvents(wasSaved
+      ? previous.filter((candidate) => candidate.id !== eventId)
+      : sortEvents([...previous, event]));
+    try {
+      if (wasSaved) await unsaveEvent(eventId, auth.getToken);
+      else await saveEvent(eventId, auth.getToken);
+    } catch (error) {
+      setSavedEvents(previous);
+      setSavedNotice(wasSaved
+        ? "We couldn't remove that event. Please try again."
+        : "We couldn't save that event. Please try again.");
+      console.error("Updating saved events failed", error);
+    }
+  }, [auth.getToken, canSave, events, savedEvents]);
 
   useEffect(() => {
     if (!auth.enabled || !auth.loaded) return;
@@ -460,6 +581,22 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     return () => controller.abort();
   }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, preferencesReloadKey]);
 
+  // Trails `query` by one debounce interval. The input stays fully controlled by
+  // `query` so typing never lags; this is only what the request is keyed on.
+  const [searchTerm, setSearchTerm] = useState(query.trim());
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    // Clearing the box should restore the unfiltered list immediately — there is
+    // no half-typed word to wait out.
+    if (!trimmed) {
+      setSearchTerm("");
+      return;
+    }
+    const timer = setTimeout(() => setSearchTerm(trimmed), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   useEffect(() => {
     if ((auth.enabled && (!auth.loaded || (auth.signedIn && !preferencesReady))) || locationStatus === "searching") {
       setStatus("loading");
@@ -473,7 +610,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
 
     const controller = new AbortController();
     setStatus("loading");
-    fetchEvents({ games: selectedGames, ...location, radiusMiles, signal: controller.signal })
+    fetchEvents({ games: selectedGames, query: searchTerm, ...location, radiusMiles, signal: controller.signal })
       .then(({ events: nextEvents, truncated }) => {
         setEvents(nextEvents);
         setResultsTruncated(truncated);
@@ -491,10 +628,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         }
       });
     return () => controller.abort();
-  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, location, radiusMiles, locationStatus, preferencesReady, reloadKey]);
+  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, searchTerm, location, radiusMiles, locationStatus, preferencesReady, reloadKey]);
 
   useEffect(() => {
     const params = new URLSearchParams();
+    if (auth.enabled) params.set("tab", tab);
     if (selectedGames.length !== catalog.ids.length) params.set("games", selectedGames.join(","));
     if (query) params.set("q", query);
     if (dateFilter !== "all") params.set("date", dateFilter);
@@ -505,32 +643,24 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     params.set("place", locationLabel);
     const nextUrl = `${window.location.pathname}?${params}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [dateFilter, location, locationLabel, query, radiusMiles, selectedGames, viewMode]);
+  }, [auth.enabled, catalog.ids.length, dateFilter, location, locationLabel, query, radiusMiles, selectedGames, tab, viewMode]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
     setSelectedEventId(null);
     setHighlightedEventId(null);
-  }, [dateFilter, query, radiusMiles, selectedGames]);
+    // Keyed on the debounced term, not the raw input: the list a selection
+    // refers to only changes when a request has actually been made for it.
+  }, [dateFilter, searchTerm, radiusMiles, selectedGames]);
 
+  // The text query is applied by the API, against every event in range rather
+  // than only the pages gathered here. What is left to do locally is the date
+  // filter, which is derived from data already on screen.
   const visibleEvents = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const filtered = events.filter((event) => {
-      if (!selectedGames.includes(event.game) || !matchesDate(event, dateFilter)) return false;
-      const text = [
-        event.title,
-        catalog.label(event.game),
-        event.venue?.name,
-        event.venue?.address,
-        event.venue?.city,
-        event.venue?.region,
-        event.format,
-        event.eventType,
-      ].filter(Boolean).join(" ").toLowerCase();
-      return text.includes(normalizedQuery);
-    });
+    const filtered = events.filter((event) =>
+      selectedGames.includes(event.game) && matchesDate(event, dateFilter));
     return sortEvents(filtered);
-  }, [dateFilter, events, query, selectedGames]);
+  }, [dateFilter, events, selectedGames]);
 
   const pagedEvents = visibleEvents.slice(0, visibleCount);
   const eventGroups = groupEventsByDate(pagedEvents);
@@ -790,6 +920,131 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       <main id="main-content" className="mx-auto flex min-h-0 w-full max-w-[90rem] flex-1 flex-col px-4 py-3 sm:px-6 lg:px-8">
         <h1 className="sr-only">Town Map events</h1>
 
+        {/*
+          Buttons with `aria-current` rather than a tablist: real tab semantics
+          oblige arrow-key navigation and a labelled panel per tab, and these two
+          swap the whole view rather than a panel inside it.
+        */}
+        {auth.enabled && (
+          <nav aria-label="Views" className="flex shrink-0 gap-1 border-b">
+            {([
+              { id: "my-events", label: "My events", icon: <Bookmark /> },
+              { id: "discover", label: "Discover", icon: <Compass /> },
+            ] as const).map((item) => (
+              <Button
+                key={item.id}
+                type="button"
+                variant="ghost"
+                aria-current={tab === item.id ? "page" : undefined}
+                className={`min-h-11 rounded-none border-b-2 px-4 ${
+                  tab === item.id ? "border-primary font-semibold" : "border-transparent text-muted-foreground"
+                }`}
+                onClick={() => setTab(item.id)}
+              >
+                {item.icon}
+                {item.label}
+                {item.id === "my-events" && canSave && savedEvents.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 font-normal tabular-nums">{savedEvents.length}</Badge>
+                )}
+              </Button>
+            ))}
+          </nav>
+        )}
+
+        {tab === "my-events" ? (
+          <section aria-labelledby="my-events-heading" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b py-2 text-sm">
+              <h2 id="my-events-heading" className="font-semibold">My events</h2>
+              {canSave && savedStatus !== "error" && (
+                <p className="text-muted-foreground">
+                  {savedStatus === "loading"
+                    ? "Loading your events…"
+                    : `${savedEvents.length} ${savedEvents.length === 1 ? "event" : "events"} saved`}
+                </p>
+              )}
+            </div>
+
+            {savedNotice && (
+              <p role="status" className="flex items-start gap-1 py-2 text-xs text-destructive">
+                <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{savedNotice}
+              </p>
+            )}
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              {!canSave ? (
+                <Empty className="py-16">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon"><Bookmark /></EmptyMedia>
+                    <EmptyTitle>Sign in to keep events</EmptyTitle>
+                    <EmptyDescription>
+                      Saved events live on your account, so they are still here on your phone and on your laptop.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent className="flex-row justify-center gap-2">
+                    <SignInButton mode="modal"><Button className="min-h-11 px-4">Sign in</Button></SignInButton>
+                    <Button variant="outline" className="min-h-11 px-4" onClick={() => setTab("discover")}>Browse events</Button>
+                  </EmptyContent>
+                </Empty>
+              ) : savedStatus === "loading" ? (
+                <LoadingCards />
+              ) : savedStatus === "error" ? (
+                <Empty className="py-16">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon"><RefreshCw /></EmptyMedia>
+                    <EmptyTitle>Your events could not be loaded</EmptyTitle>
+                    <EmptyDescription>Nothing has been lost. Check your connection and try again.</EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button variant="outline" className="min-h-11 px-4" onClick={() => setSavedReloadKey((value) => value + 1)}>
+                      Try again
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              ) : savedEvents.length === 0 ? (
+                <Empty className="py-16">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon"><Bookmark /></EmptyMedia>
+                    <EmptyTitle>Nothing saved yet</EmptyTitle>
+                    <EmptyDescription>
+                      Save an event from Discover and it will be waiting here, soonest first.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button className="min-h-11 px-4" onClick={() => setTab("discover")}>Find events</Button>
+                  </EmptyContent>
+                </Empty>
+              ) : (
+                <div className="border-b" aria-label="Saved events">
+                  {groupEventsByDate(savedEvents).map((group) => (
+                    <section key={group.key} aria-labelledby={`saved-${group.key}`}>
+                      <h3 id={`saved-${group.key}`} className="border-b bg-muted/35 px-2 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                        {group.label}
+                      </h3>
+                      <ol className="divide-y">
+                        {group.events.map((event) => (
+                          <EventRow
+                            key={event.id}
+                            event={event}
+                            active={false}
+                            saved
+                            canSave={canSave}
+                            onPreview={() => undefined}
+                            onSelect={() => undefined}
+                            onToggleSave={toggleSaved}
+                          />
+                        ))}
+                      </ol>
+                    </section>
+                  ))}
+                </div>
+              )}
+              <p className="px-2 py-5 text-xs text-muted-foreground">
+                Verify details with the organizer. Past events drop off this list automatically.
+              </p>
+            </div>
+          </section>
+        ) : (
+        <>
         <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
           <div className={`grid gap-2 ${auth.signedIn ? "" : "sm:grid-cols-[minmax(0,1fr)_auto]"}`}>
             <div className="relative">
@@ -920,8 +1175,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                               key={event.id}
                               event={event}
                               active={event.id === activeEventId}
+                              saved={savedIds.has(event.id)}
+                              canSave={canSave}
                               onPreview={setHighlightedEventId}
                               onSelect={handleListSelect}
+                              onToggleSave={toggleSaved}
                             />
                           ))}
                         </ol>
@@ -971,6 +1229,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
             </div>
           </div>
         </section>
+        </>
+        )}
       </main>
     </div>
   );

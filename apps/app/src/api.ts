@@ -1,5 +1,6 @@
 import {
   GameRegistrySchema,
+  SavedEventsSchema,
   UserPreferencesSchema,
   type EventPage,
   type Game,
@@ -21,6 +22,12 @@ const MAX_EVENT_PAGES = 5;
 
 export type EventFetchOptions = {
   games: Game[];
+  /**
+   * Free-text query. Applied by the API against every event matching the
+   * location and time window, not by the caller against the pages it happened to
+   * gather — a match beyond `MAX_EVENT_PAGES` is otherwise unreachable.
+   */
+  query?: string;
   latitude?: number;
   longitude?: number;
   radiusMiles?: number;
@@ -32,6 +39,8 @@ function eventQueryParams(options: EventFetchOptions, cursor: string | null) {
     games: options.games.join(","),
     limit: String(EVENT_PAGE_SIZE),
   });
+  const query = options.query?.trim();
+  if (query) params.set("q", query);
   if (options.latitude !== undefined && options.longitude !== undefined) {
     params.set("latitude", String(options.latitude));
     params.set("longitude", String(options.longitude));
@@ -81,13 +90,56 @@ export async function geocodePlace(query: string, signal?: AbortSignal) {
   return response.json() as Promise<HomeLocation>;
 }
 
-async function authorizationHeaders(getToken: () => Promise<string | null>) {
+async function bearerToken(getToken: () => Promise<string | null>) {
   const token = await getToken();
   if (!token) throw new Error("No active Clerk session");
+  return `Bearer ${token}`;
+}
+
+async function authorizationHeaders(getToken: () => Promise<string | null>) {
   return {
-    Authorization: `Bearer ${token}`,
+    Authorization: await bearerToken(getToken),
     "Content-Type": "application/json",
   };
+}
+
+/**
+ * Authorization alone, for requests that carry no body.
+ *
+ * The content type is deliberately absent rather than copied from
+ * `authorizationHeaders`: Fastify rejects an empty body on a request that
+ * declares itself JSON, so a bodyless PUT would fail before reaching a handler.
+ */
+async function bodylessAuthorizationHeaders(getToken: () => Promise<string | null>) {
+  return { Authorization: await bearerToken(getToken) };
+}
+
+export async function fetchSavedEvents(
+  getToken: () => Promise<string | null>,
+  signal?: AbortSignal,
+) {
+  const response = await fetch(`${API_URL}/v1/saved-events`, {
+    headers: await bodylessAuthorizationHeaders(getToken),
+    signal,
+  });
+  if (!response.ok) throw new Error(`Saved events API returned ${response.status}`);
+  return SavedEventsSchema.parse(await response.json());
+}
+
+export async function saveEvent(eventId: string, getToken: () => Promise<string | null>) {
+  const response = await fetch(`${API_URL}/v1/saved-events/${encodeURIComponent(eventId)}`, {
+    method: "PUT",
+    headers: await bodylessAuthorizationHeaders(getToken),
+  });
+  if (!response.ok) throw new Error(await errorDetail(response) ?? `Saving returned ${response.status}`);
+}
+
+export async function unsaveEvent(eventId: string, getToken: () => Promise<string | null>) {
+  const response = await fetch(`${API_URL}/v1/saved-events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+    headers: await bodylessAuthorizationHeaders(getToken),
+  });
+  if (!response.ok) throw new Error(await errorDetail(response) ?? `Removing returned ${response.status}`);
 }
 
 /**

@@ -70,6 +70,29 @@ describe("fetchEvents", () => {
     }
   });
 
+  it("sends the text query on every page, so the filter is the API's to apply", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(page(["a"], "cursor-1"))
+      .mockResolvedValueOnce(page(["b"], null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchEvents({ games: ["magic"], query: "  friday night  " });
+
+    for (const [url] of fetchMock.mock.calls) {
+      expect(new URL(url as string).searchParams.get("q")).toBe("friday night");
+    }
+  });
+
+  it("omits an empty query rather than filtering on whitespace", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(page(["only"], null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchEvents({ games: ["magic"], query: "   " });
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(new URL(url as string).searchParams.has("q")).toBe(false);
+  });
+
   it("surfaces a failed page instead of returning a partial result", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(page(["a"], "cursor-1"))

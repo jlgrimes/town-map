@@ -12,6 +12,7 @@ import type {
   Game,
   NormalizedEvent,
   NormalizedVenue,
+  SavedEvents,
   UserPreferences,
 } from "@town-map/contracts";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
@@ -685,7 +686,8 @@ export async function saveUserPreferences(
 const EVENT_MUTABLE_COLUMNS = [
   "game", "venue_id", "title", "description", "starts_at", "ends_at", "timezone",
   "status", "format", "event_type", "source_url", "registration_url", "price_amount",
-  "price_currency", "capacity", "is_online", "latitude", "longitude", "source_series_id",
+  "price_currency", "capacity", "is_online", "latitude", "longitude", "search_text",
+  "source_series_id",
   // Included so that seeing a withdrawn event again counts as a change and
   // therefore un-withdraws it. `collection_region_id` is deliberately absent:
   // where two regions overlap, comparing it would make every shared event look
@@ -762,6 +764,29 @@ async function upsertVenues(client: PoolClient, source: EventSource, events: Nor
   return new Map(result.rows.map((row) => [row.sourceVenueId, row.id]));
 }
 
+/**
+ * The text a free-text query is matched against, denormalised onto the event for
+ * the same reason its coordinates are: keeping it on `events` lets one index
+ * serve the search predicate instead of joining `venues` across every candidate.
+ *
+ * `game` is a slug, so its hyphens are split — otherwise "flesh-and-blood" is
+ * one token and typing the words finds nothing. `description` is deliberately
+ * left out: source descriptions are long, boilerplate-heavy and would drown a
+ * title match in noise.
+ */
+function eventSearchText(event: NormalizedEvent) {
+  return [
+    event.title,
+    event.game.replace(/-/g, " "),
+    event.format,
+    event.eventType,
+    event.venue?.name,
+    event.venue?.address,
+    event.venue?.city,
+    event.venue?.region,
+  ].filter(Boolean).join(" ");
+}
+
 async function upsertEventBatch(
   client: PoolClient,
   source: EventSource,
@@ -791,6 +816,7 @@ async function upsertEventBatch(
     // Denormalised from the venue so one index can serve time, game and location.
     latitude: event.venue?.latitude ?? null,
     longitude: event.venue?.longitude ?? null,
+    search_text: eventSearchText(event),
     raw: event.raw ?? {},
   }));
 
@@ -798,20 +824,20 @@ async function upsertEventBatch(
     `INSERT INTO events (
        source, source_event_id, game, venue_id, title, description, starts_at, ends_at,
        timezone, status, format, event_type, source_url, registration_url, price_amount,
-       price_currency, capacity, is_online, latitude, longitude, source_series_id,
+       price_currency, capacity, is_online, latitude, longitude, search_text, source_series_id,
        collection_region_id, withdrawn_at
      )
      SELECT $1, entry.source_event_id, entry.game, entry.venue_id, entry.title, entry.description,
        entry.starts_at, entry.ends_at, entry.timezone, entry.status, entry.format, entry.event_type,
        entry.source_url, entry.registration_url, entry.price_amount, entry.price_currency,
-       entry.capacity, entry.is_online, entry.latitude, entry.longitude, entry.source_series_id,
-       $3::uuid, NULL::timestamptz
+       entry.capacity, entry.is_online, entry.latitude, entry.longitude, entry.search_text,
+       entry.source_series_id, $3::uuid, NULL::timestamptz
      FROM jsonb_to_recordset($2::jsonb) AS entry(
        source_event_id text, game text, venue_id uuid, title text, description text,
        starts_at timestamptz, ends_at timestamptz, timezone text, status text, format text,
        event_type text, source_url text, registration_url text, price_amount numeric(10, 2),
        price_currency text, capacity integer, is_online boolean, latitude double precision,
-       longitude double precision, source_series_id text, raw jsonb
+       longitude double precision, search_text text, source_series_id text, raw jsonb
      )
      ON CONFLICT (source, source_event_id) DO UPDATE SET
        ${assignExcluded(EVENT_MUTABLE_COLUMNS)},
@@ -995,6 +1021,7 @@ function decodeCursor(value: string | undefined, expectedKind: EventCursor["kind
 function cursorScope(query: Omit<EventQuery, "categories">) {
   return JSON.stringify({
     games: [...query.games].sort(),
+    q: query.q ?? null,
     to: query.to ?? null,
     latitude: query.latitude ?? null,
     longitude: query.longitude ?? null,
@@ -1100,6 +1127,15 @@ function toEventListItem(row: EventRow): EventListItem {
 }
 
 /**
+ * Must stay equivalent to the expression indexed by `events_search_text_idx` in
+ * migration 020 — the table alias is immaterial, but the text search
+ * configuration and the coalesce fallback are not. PostgreSQL matches an
+ * expression index by the expression, so a difference in either silently costs
+ * the index and turns free-text search into a scan of every candidate event.
+ */
+const EVENT_SEARCH_VECTOR = "to_tsvector('english', coalesce(e.search_text, ''))";
+
+/**
  * Categories are expanded to their games by the API, so they never reach the
  * query and the hot path stays free of a join against the taxonomy tables.
  */
@@ -1126,6 +1162,13 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
   }
   if (query.games.length) {
     conditions.push(`e.game = ANY(${addValue(query.games)}::text[])`);
+  }
+  if (query.q) {
+    // A query of nothing but stop words ("the", "a") parses to an empty tsquery,
+    // which matches no row. Showing everything is the better reading of a search
+    // that carries no searchable term, so the empty case falls through.
+    const tsquery = `websearch_to_tsquery('english', ${addValue(query.q)})`;
+    conditions.push(`(numnode(${tsquery}) = 0 OR ${EVENT_SEARCH_VECTOR} @@ ${tsquery})`);
   }
 
   let sql: string;
@@ -1215,4 +1258,76 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
     count: pageRows.length,
     nextCursor,
   };
+}
+
+/**
+ * One user's saved events, soonest first.
+ *
+ * Past events are excluded rather than shown greyed out: retention deletes them
+ * shortly afterwards anyway, so a list that included them would empty itself out
+ * on a schedule the user cannot see. Withdrawn events are excluded for the same
+ * reason the event list excludes them -- they are retained for audit, not to be
+ * served.
+ *
+ * `distanceMiles` is null throughout. A save has no search origin attached, and
+ * inventing one from the account's home would make the same row read differently
+ * here than it does in Discover.
+ */
+export async function listSavedEvents(
+  clerkUserId: string,
+  database: Queryable = getPool(),
+): Promise<SavedEvents> {
+  const result = await database.query<EventRow>(
+    `SELECT ${eventSelect}, ${CURSOR_STARTS_AT}, NULL::double precision AS "distanceMeters"
+     FROM saved_events se
+     JOIN events e ON e.id = se.event_id
+     LEFT JOIN venues v ON v.id = e.venue_id
+     LEFT JOIN event_series s ON s.id = e.series_id
+     WHERE se.clerk_user_id = $1
+       AND e.withdrawn_at IS NULL
+       AND e.starts_at >= now()
+     ORDER BY e.starts_at ASC, e.id ASC`,
+    [clerkUserId],
+  );
+  return { events: result.rows.map(toEventListItem), count: result.rows.length };
+}
+
+/**
+ * Saves an event, reporting whether it was a real event to save.
+ *
+ * The insert and the existence check are one statement so that saving something
+ * already saved stays a success. `ON CONFLICT DO NOTHING` alone could not tell
+ * that apart from an unknown id -- both write no row -- and the second time a
+ * user tapped save they would be told the event does not exist.
+ */
+export async function saveEvent(
+  clerkUserId: string,
+  eventId: string,
+  database: Queryable = getPool(),
+): Promise<boolean> {
+  const result = await database.query<{ id: string }>(
+    `WITH target AS (
+       SELECT id FROM events WHERE id = $2::uuid AND withdrawn_at IS NULL
+     ), inserted AS (
+       INSERT INTO saved_events (clerk_user_id, event_id)
+       SELECT $1, id FROM target
+       ON CONFLICT (clerk_user_id, event_id) DO NOTHING
+       RETURNING event_id
+     )
+     SELECT id FROM target`,
+    [clerkUserId, eventId],
+  );
+  return result.rows.length > 0;
+}
+
+/** Removing a save that is not there is not an error, so this reports nothing. */
+export async function unsaveEvent(
+  clerkUserId: string,
+  eventId: string,
+  database: Queryable = getPool(),
+): Promise<void> {
+  await database.query(
+    "DELETE FROM saved_events WHERE clerk_user_id = $1 AND event_id = $2::uuid",
+    [clerkUserId, eventId],
+  );
 }
