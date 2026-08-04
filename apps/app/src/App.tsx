@@ -1411,7 +1411,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                                         saved={savedIds.has(event.id)}
                                         canSave={canSave}
                                         layoutIdPrefix="discover"
-                                        onPreview={setHighlightedEventId}
+                                        onPreview={() => undefined}
                                         onSelect={handleDiscoverSelect}
                                         onToggleSave={toggleSaved}
                                       />
