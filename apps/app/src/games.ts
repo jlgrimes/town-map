@@ -40,39 +40,4 @@ const FALLBACK_REGISTRY: GameRegistry = {
   ],
 };
 
-export type GameCatalog = {
-  registry: GameRegistry;
-  /** Every game id in display order. */
-  ids: Game[];
-  /** Registry label, falling back to a readable form of the slug. */
-  label: (game: Game) => string;
-  loaded: boolean;
-};
-
-function toCatalog(registry: GameRegistry, loaded: boolean): GameCatalog {
-  const labels = new Map(registry.games.map((game) => [game.id, game.label]));
-  return {
-    registry,
-    ids: registry.games.map((game) => game.id),
-    label: (game) => labels.get(game) ?? fallbackGameLabel(game),
-    loaded,
-  };
-}
-
-export function useGameCatalog(): GameCatalog {
-  const [catalog, setCatalog] = useState(() => toCatalog(FALLBACK_REGISTRY, false));
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchGameRegistry(controller.signal)
-      .then((registry) => {
-        if (registry.games.length) setCatalog(toCatalog(registry, true));
-      })
-      .catch(() => {
-        // Keeps the bundled fallback; the events request surfaces the outage.
-      });
-    return () => controller.abort();
-  }, []);
-
-  return catalog;
-}
+export { useGameCatalog, type GameCatalog } from "./hooks/useGameCatalog";
