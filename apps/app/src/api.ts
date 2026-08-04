@@ -122,7 +122,7 @@ export async function fetchSavedEvents(
     headers: await bodylessAuthorizationHeaders(getToken),
     signal,
   });
-  if (!response.ok) throw new Error(`Saved events API returned ${response.status}`);
+  if (!response.ok) throw new Error(await errorDetail(response) ?? `Saved events API returned ${response.status}`);
   return SavedEventsSchema.parse(await response.json());
 }
 

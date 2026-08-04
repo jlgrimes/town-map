@@ -532,9 +532,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       else await saveEvent(eventId, auth.getToken);
     } catch (error) {
       setSavedEvents(previous);
-      setSavedNotice(wasSaved
-        ? "We couldn't remove that event. Please try again."
-        : "We couldn't save that event. Please try again.");
+      setSavedNotice(error instanceof Error && error.message
+        ? error.message
+        : (wasSaved
+          ? "We couldn't remove that event. Please try again."
+          : "We couldn't save that event. Please try again."));
       console.error("Updating saved events failed", error);
     }
   }, [auth.getToken, canSave, events, savedEvents]);

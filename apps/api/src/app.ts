@@ -230,6 +230,9 @@ export async function createApp(): Promise<FastifyInstance> {
     reply.header("Cache-Control", "no-store");
     const userId = authenticatedUserId(request, reply);
     if (!userId) return;
+    if (!process.env.DATABASE_URL) {
+      return reply.code(503).send({ error: "The event database is not configured." });
+    }
     return getUserPreferences(userId);
   });
 
@@ -237,6 +240,9 @@ export async function createApp(): Promise<FastifyInstance> {
     reply.header("Cache-Control", "no-store");
     const userId = authenticatedUserId(request, reply);
     if (!userId) return;
+    if (!process.env.DATABASE_URL) {
+      return reply.code(503).send({ error: "The event database is not configured." });
+    }
     const parsed = UserPreferencesUpdateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid preferences", details: parsed.error.flatten() });
