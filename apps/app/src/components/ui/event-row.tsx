@@ -1,8 +1,6 @@
-import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { type EventListItem } from "@town-map/contracts";
 import { GameIcon } from "@/GameIcon";
-import { slugifyShop } from "@/lib/shop-utils";
 
 const META_LABELS: Record<string, string> = {
   booster_draft: "Booster Draft",
@@ -117,13 +115,9 @@ export function EventRow({
             {showLocation ? (
               <>
                 {event.venue?.name ? (
-                  <Link
-                    to={`/shop/${slugifyShop(event.venue.name, event.venue.city)}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="hover:underline hover:text-primary transition-colors font-medium text-foreground/80"
-                  >
+                  <span className="font-medium text-foreground/80">
                     {event.venue.name}
-                  </Link>
+                  </span>
                 ) : (
                   "Venue to be announced"
                 )}

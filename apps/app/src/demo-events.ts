@@ -62,29 +62,56 @@ function event(
   };
 }
 
-const goodGamesEvent = event("demo-1", "magic", "Friday Night Magic — Commander", 0, 19, "Good Games Chicago", "Chicago", 1.8, { format: "Commander", priceAmount: 10 });
+const goodGamesEvent = event("demo-1", "magic", "Friday Night Magic — Commander", 0, 19, "Good Games Chicago", "Chicago", 1.8, {
+  format: "Commander",
+  priceAmount: 10,
+  description: "Join us for weekly Friday Night Magic! Bring your favorite Commander deck for casual multiplayer games. All skill levels welcome and promo packs will be awarded.",
+});
 
 export const demoEvents: EventListItem[] = [
   goodGamesEvent,
   event("demo-7", "pokemon", "Pokémon League at Good Games", 2, 18, "Good Games Chicago", "Chicago", 1.8, {
     eventType: "League",
     venue: goodGamesEvent.venue,
+    description: "Weekly Pokémon TCG League play. Open to players of all ages and skill levels. Earn League promo cards and meet local trainers!",
   }),
   event("demo-8", "yugioh", "Yu-Gi-Oh! Locals at Good Games", 4, 19, "Good Games Chicago", "Chicago", 1.8, {
     format: "Advanced",
     venue: goodGamesEvent.venue,
+    description: "Swiss round tournament following the current Advanced Constructed banlist. Booster pack prizes for top finishers.",
   }),
   event("demo-9", "onepiece", "One Piece Store Tournament", 3, 18, "Good Games Chicago", "Chicago", 1.8, {
     format: "Standard Regulation",
     venue: goodGamesEvent.venue,
+    description: "Official Bandai Store Tournament. Construct your 50-card deck and battle for promo packs and store credit rewards.",
   }),
   event("demo-10", "riftbound", "Riftbound Nexus Night", 5, 18, "Good Games Chicago", "Chicago", 1.8, {
     format: "Constructed",
     venue: goodGamesEvent.venue,
+    description: "Weekly Nexus Night community gathering for Riftbound players. Demos available for newcomers!",
   }),
-  event("demo-2", "pokemon", "Pokémon League Challenge", 1, 11, "Dice Dojo", "Chicago", 3.4, { format: "Standard", eventType: "League Challenge" }),
-  event("demo-3", "yugioh", "Saturday Advanced Local", 1, 14, "Gamers World", "Chicago", 4.9, { format: "Advanced", capacity: 24 }),
-  event("demo-4", "magic", "Modern Monday", 3, 18, "Grandmaster Games", "Oak Park", 8.2, { format: "Modern", priceAmount: 15 }),
-  event("demo-5", "pokemon", "Casual Pokémon League", 4, 17, "Prism Games", "Logan Square", 2.6, { eventType: "League" }),
-  event("demo-6", "yugioh", "OTS Championship", 6, 12, "Pastimes Comics & Games", "Niles", 14.1, { eventType: "OTS Championship", capacity: 64 }),
+  event("demo-2", "pokemon", "Pokémon League Challenge", 1, 11, "Dice Dojo", "Chicago", 3.4, {
+    format: "Standard",
+    eventType: "League Challenge",
+    description: "Competitive League Challenge event awarding Championship Points for the 2026 season. Deck list required prior to round 1.",
+  }),
+  event("demo-3", "yugioh", "Saturday Advanced Local", 1, 14, "Gamers World", "Chicago", 4.9, {
+    format: "Advanced",
+    capacity: 24,
+    description: "Saturday afternoon local tournament with 4 rounds of Swiss. Entry includes OTS pack upon registration.",
+  }),
+  event("demo-4", "magic", "Modern Monday", 3, 18, "Grandmaster Games", "Oak Park", 8.2, {
+    format: "Modern",
+    priceAmount: 15,
+    description: "Competitive Modern format event. 3-4 rounds depending on turnout, store credit payout based on record.",
+  }),
+  event("demo-5", "pokemon", "Casual Pokémon League", 4, 17, "Prism Games", "Logan Square", 2.6, {
+    eventType: "League",
+    description: "Casual open-play format. Perfect for learning the game, testing new deck ideas, or trading cards.",
+  }),
+  event("demo-6", "yugioh", "OTS Championship", 6, 12, "Pastimes Comics & Games", "Niles", 14.1, {
+    eventType: "OTS Championship",
+    capacity: 64,
+    description: "Official Tournament Store Championship offering World Championship Qualifier invites to top placing players!",
+  }),
 ];

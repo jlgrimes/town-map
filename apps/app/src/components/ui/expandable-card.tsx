@@ -16,7 +16,6 @@ import {
   Clock,
   MapPin,
   Tag,
-  Navigation,
   DollarSign,
   Users,
   Repeat,
@@ -155,7 +154,7 @@ export function ExpandableEventCardModal({
               className="w-full max-w-[520px] flex flex-col bg-card border border-border rounded-3xl overflow-hidden text-card-foreground shadow-2xl"
             >
               <div>
-                <div className="flex justify-between items-start p-5 border-b bg-muted/40">
+                <div className="flex justify-between items-center p-5 border-b bg-muted/40 gap-3">
                   {/* Same grouping as the collapsed row: icon and text stay on one line,
                       vertically centered, at the row's gap. */}
                   <div className="flex gap-3.5 items-center min-w-0 flex-1">
@@ -185,6 +184,19 @@ export function ExpandableEventCardModal({
                       </motion.div>
                     </motion.div>
                   </div>
+
+                  {mapsUrl && (
+                    <motion.a
+                      layoutId={`button-${layoutIdPrefix}-${event.id}`}
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open in Google Maps"
+                      className="p-2.5 rounded-full border border-border bg-background hover:bg-accent text-foreground shrink-0 transition-colors shadow-xs flex items-center justify-center"
+                    >
+                      <MapPin className="size-4 text-primary" />
+                    </motion.a>
+                  )}
                 </div>
 
                 {/* `layout` makes this a projection node so it cancels the scale the expanding
@@ -199,9 +211,6 @@ export function ExpandableEventCardModal({
                     className="text-muted-foreground text-sm pb-6 flex flex-col items-start gap-4"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 w-full pt-1">
-                      <Badge variant="secondary" className="font-medium">
-                        {catalog.label(event.game)}
-                      </Badge>
                       <div className="flex items-center gap-3 text-xs">
                         <span className="flex items-center gap-1 font-medium">
                           <Calendar className="size-3.5 text-primary" />
@@ -212,66 +221,7 @@ export function ExpandableEventCardModal({
                           {timeFormatted}
                         </span>
                       </div>
-                    </div>
-
-                    <div className="w-full rounded-2xl border bg-neutral-50 dark:bg-neutral-800/50 p-4 space-y-2">
-                      <div className="flex items-start justify-between gap-2.5">
-                        <div className="flex items-start gap-2.5">
-                          <MapPin className="size-4 shrink-0 text-primary mt-0.5" />
-                          <div>
-                            <Typography variant="h3" as="h4">
-                              {event.venue?.name || "Venue to be announced"}
-                            </Typography>
-                            {fullAddress && (
-                              <Typography variant="caption" className="mt-0.5 block leading-relaxed">
-                                {fullAddress}
-                              </Typography>
-                            )}
-                            {event.distanceMiles !== null && (
-                              <Typography variant="caption" className="mt-1 flex items-center font-medium">
-                                <Navigation className="inline size-3 mr-1 text-primary" />
-                                {event.distanceMiles} miles away
-                              </Typography>
-                            )}
-                          </div>
-                        </div>
-
-                        {event.venue?.name && (
-                          <Link
-                            to={`/shop/${slugifyShop(event.venue.name, event.venue.city)}`}
-                            onClick={() => onClose()}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline shrink-0 bg-background border rounded-lg px-2.5 py-1 shadow-xs"
-                          >
-                            <span>Shop Page</span>
-                            <Building2 className="size-3" />
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="w-full space-y-2">
-                      <Typography variant="kicker" as="h4">
-                        Event Details
-                      </Typography>
-                      <div className="flex flex-wrap gap-2">
-                        {price && (
-                          <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                            <DollarSign className="size-3 text-emerald-500" />
-                            {price}
-                          </Badge>
-                        )}
-                        {event.capacity !== null && (
-                          <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                            <Users className="size-3 text-blue-500" />
-                            Capacity: {event.capacity}
-                          </Badge>
-                        )}
-                        {recurrence && (
-                          <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
-                            <Repeat className="size-3 text-purple-500" />
-                            {recurrence}
-                          </Badge>
-                        )}
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {details.map((detail) => (
                           <Badge key={detail} variant="secondary" className="gap-1 py-1 px-3 text-xs font-medium">
                             <Tag className="size-3" />
@@ -280,6 +230,34 @@ export function ExpandableEventCardModal({
                         ))}
                       </div>
                     </div>
+
+                    {(price || event.capacity !== null || recurrence) && (
+                      <div className="w-full space-y-2">
+                        <Typography variant="kicker" as="h4">
+                          Event Details
+                        </Typography>
+                        <div className="flex flex-wrap gap-2">
+                          {price && (
+                            <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                              <DollarSign className="size-3 text-emerald-500" />
+                              {price}
+                            </Badge>
+                          )}
+                          {event.capacity !== null && (
+                            <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                              <Users className="size-3 text-blue-500" />
+                              Capacity: {event.capacity}
+                            </Badge>
+                          )}
+                          {recurrence && (
+                            <Badge variant="outline" className="gap-1 py-1 px-3 text-xs font-medium">
+                              <Repeat className="size-3 text-purple-500" />
+                              {recurrence}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {event.description && (
                       <div className="w-full space-y-1.5 pt-1">
@@ -293,16 +271,15 @@ export function ExpandableEventCardModal({
                     )}
 
                     <div className="w-full pt-2 flex flex-wrap items-center gap-3">
-                      {mapsUrl && (
-                        <a
-                          href={mapsUrl}
-                          target="_blank"
-                          rel="noreferrer"
+                      {event.venue?.name && (
+                        <Link
+                          to={`/shop/${slugifyShop(event.venue.name, event.venue.city)}`}
+                          onClick={() => onClose()}
                           className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-input bg-background px-4 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
                         >
-                          <MapPin className="size-3.5 text-muted-foreground" />
-                          <span>Open in Google Maps</span>
-                        </a>
+                          <Building2 className="size-3.5 text-primary" />
+                          <span>Open shop page</span>
+                        </Link>
                       )}
 
                       {canSave && (
