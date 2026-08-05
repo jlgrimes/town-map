@@ -412,14 +412,15 @@ function LoadingCards() {
 
 export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const catalog = useGameCatalog();
+  const [accountGames, setAccountGames] = useState<Game[]>([]);
   // Null until the user chooses, so a game added to the catalogue is selected by
   // default rather than being invisible to anyone with an existing URL.
   const [gameSelection, setSelectedGames] = useState<Game[] | null>(initialGames);
   const selectedGames = useMemo(
     () => (gameSelection === null
-      ? catalog.ids
+      ? (auth.signedIn && accountGames.length > 0 ? accountGames : [])
       : gameSelection.filter((game) => catalog.ids.includes(game))),
-    [gameSelection, catalog],
+    [gameSelection, catalog, auth.signedIn, accountGames],
   );
   const [events, setEvents] = useState<EventListItem[]>([]);
   // True when the area holds more events than one query will gather, so the map
@@ -435,7 +436,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [locationLabel, setLocationLabel] = useState(initialParams.get("place") ?? "Chicago, IL");
   const [homeAddress, setHomeAddress] = useState<string | null>(null);
   const [homeDraft, setHomeDraft] = useState("");
-  const [accountGames, setAccountGames] = useState<Game[]>([]);
   const [preferenceGamesDraft, setPreferenceGamesDraft] = useState<Game[]>([]);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [preferencesReady, setPreferencesReady] = useState(!auth.enabled);
@@ -636,15 +636,10 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setStatus("loading");
       return;
     }
-    if (selectedGames.length === 0) {
-      setEvents([]);
-      setStatus("live");
-      return;
-    }
-
     const controller = new AbortController();
     setStatus("loading");
-    fetchEvents({ games: selectedGames, query: searchTerm, ...location, radiusMiles, signal: controller.signal })
+    const gamesToFetch = selectedGames.length === 0 ? catalog.ids : selectedGames;
+    fetchEvents({ games: gamesToFetch, query: searchTerm, ...location, radiusMiles, signal: controller.signal })
       .then(({ events: nextEvents, truncated }) => {
         setEvents(nextEvents);
         setResultsTruncated(truncated);
@@ -662,11 +657,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         }
       });
     return () => controller.abort();
-  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, searchTerm, location, radiusMiles, locationStatus, preferencesReady, reloadKey]);
+  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, searchTerm, location, radiusMiles, locationStatus, preferencesReady, reloadKey, catalog.ids]);
 
   useEffect(() => {
     const params = new URLSearchParams();
-    if (selectedGames.length !== catalog.ids.length) params.set("games", selectedGames.join(","));
+    if (selectedGames.length > 0) params.set("games", selectedGames.join(","));
     if (query) params.set("q", query);
     if (dateFilter !== "all") params.set("date", dateFilter);
     if (priceFilter !== "all") params.set("price", priceFilter);
@@ -677,7 +672,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     params.set("place", locationLabel);
     const nextUrl = `${window.location.pathname}?${params}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [catalog.ids.length, dateFilter, location, locationLabel, priceFilter, query, radiusMiles, selectedGames, viewMode]);
+  }, [dateFilter, location, locationLabel, priceFilter, query, radiusMiles, selectedGames, viewMode]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -692,17 +687,15 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   // and price filters, which are derived from data already on screen.
   const visibleEvents = useMemo(() => {
     const filtered = events.filter((event) =>
-      selectedGames.includes(event.game) &&
+      (selectedGames.length === 0 || selectedGames.includes(event.game)) &&
       matchesDate(event, dateFilter) &&
       matchesPrice(event, priceFilter));
     return sortEvents(filtered);
   }, [dateFilter, events, priceFilter, selectedGames]);
 
-  // Signed-in users start from the games they saved; everyone else starts from
-  // the whole catalogue. This is what the chip resets to, not an empty set.
   const defaultGames = useMemo(
-    () => (auth.signedIn && accountGames.length > 0 ? accountGames : catalog.ids),
-    [accountGames, auth.signedIn, catalog.ids],
+    () => (auth.signedIn && accountGames.length > 0 ? accountGames : []),
+    [accountGames, auth.signedIn],
   );
 
   const filterValue = useMemo<FilterBarValue>(

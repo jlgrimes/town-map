@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import {
   CalendarClock,
   Check,
-  Dices,
   FilterX,
   ListFilter,
   Route,
@@ -37,7 +36,7 @@ export type DateFilter =
   | 'week'
   | 'month';
 export type PriceFilter = 'all' | 'free' | 'under10' | 'under25';
-type FilterId = 'date' | 'distance' | 'games' | 'price';
+type FilterId = 'date' | 'distance' | 'price';
 
 export const DATE_OPTIONS: Array<{
   value: DateFilter;
@@ -65,12 +64,6 @@ export const PRICE_OPTIONS: Array<{
   { value: 'under25', label: 'Under $25', chip: '$25', operator: 'under' },
 ];
 
-/**
- * Preset radii rather than a slider. Nobody searches for 3.7 miles — the real
- * intents are walkable, short drive, across town, whole region — and presets are
- * keyboard-navigable, announce as a radio group, and clear the 24px target size
- * that a slider thumb on a short track does not.
- */
 const RADIUS_PRESETS = [5, 10, 25, 50, 100];
 
 export const DEFAULT_RADIUS_MILES = 25;
@@ -81,11 +74,10 @@ const FILTERS: Record<
 > = {
   date: { label: 'Occurs', icon: CalendarClock },
   distance: { label: 'Distance', icon: Route },
-  games: { label: 'Playing', icon: Dices },
   price: { label: 'Price', icon: Tag },
 };
 
-const FILTER_ORDER: FilterId[] = ['date', 'distance', 'games', 'price'];
+const FILTER_ORDER: FilterId[] = ['date', 'distance', 'price'];
 
 export type FilterBarValue = {
   dateFilter: DateFilter;
@@ -98,7 +90,7 @@ type FilterBarProps = {
   value: FilterBarValue;
   onChange: (next: Partial<FilterBarValue>) => void;
   catalog: GameCatalog;
-  /** Games the user selects by default — their saved preferences, or the whole catalog. */
+  /** Games the user selects by default — their saved preferences. */
   defaultGames: Game[];
   resultCount: number;
   className?: string;
@@ -106,7 +98,7 @@ type FilterBarProps = {
 
 function optionRowClasses(selected: boolean) {
   return cn(
-    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors',
+    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors cursor-pointer',
     'hover:bg-muted focus-visible:bg-muted',
     selected && 'font-medium',
   );
@@ -120,21 +112,13 @@ export function FilterBar({
   resultCount,
   className,
 }: FilterBarProps) {
-  const gamesAreDefault =
-    value.games.length === defaultGames.length &&
-    value.games.every(game => defaultGames.includes(game));
-
-  // A chip exists because the user put it there. Seeded from whatever arrived
-  // narrowed in the URL so a shared link shows the filters it is actually using.
   const [active, setActive] = useState<FilterId[]>(() =>
     FILTER_ORDER.filter(id =>
       id === 'date'
         ? value.dateFilter !== 'all'
         : id === 'distance'
           ? value.radiusMiles !== DEFAULT_RADIUS_MILES
-          : id === 'games'
-            ? !gamesAreDefault
-            : value.price !== 'all',
+          : value.price !== 'all',
     ),
   );
   const [openFilter, setOpenFilter] = useState<FilterId | null>(null);
@@ -142,6 +126,7 @@ export function FilterBar({
   const [radiusDraft, setRadiusDraft] = useState('');
 
   const availableFilters = FILTER_ORDER.filter(id => !active.includes(id));
+  const availableGames = catalog.ids.filter(game => !value.games.includes(game));
 
   const dateOption =
     DATE_OPTIONS.find(option => option.value === value.dateFilter) ??
@@ -150,40 +135,21 @@ export function FilterBar({
     PRICE_OPTIONS.find(option => option.value === value.price) ??
     PRICE_OPTIONS[0];
 
-  const gamesSummary = useMemo(() => {
-    if (catalog.ids.length > 0 && value.games.length === catalog.ids.length)
-      return 'All games';
-    if (value.games.length === 0) return 'None';
-    if (value.games.length === 1) return catalog.label(value.games[0]);
-    return `${catalog.label(value.games[0])} +${value.games.length - 1}`;
-  }, [catalog, value.games]);
-
-  const gamesOperator = useMemo(() => {
-    if (value.games.length > 1 && value.games.length < catalog.ids.length) {
-      return 'is any of';
-    }
-    return 'is';
-  }, [catalog.ids.length, value.games.length]);
-
   const operators: Record<FilterId, string> = {
     date: dateOption.operator,
     distance: 'within',
-    games: gamesOperator,
     price: priceOption.operator,
   };
 
   const summaries: Record<FilterId, string> = {
     date: dateOption.chip,
     distance: `${value.radiusMiles} mi`,
-    games: gamesSummary,
     price: priceOption.chip,
   };
 
   function addFilter(id: FilterId) {
     setActive(current => (current.includes(id) ? current : [...current, id]));
     setAddMenuOpen(false);
-    // Opening the value popover straight away saves the second click — adding a
-    // filter and choosing its value are one intent.
     setTimeout(() => setOpenFilter(id), 0);
   }
 
@@ -191,16 +157,7 @@ export function FilterBar({
     setActive(current => current.filter(item => item !== id));
     if (id === 'date') onChange({ dateFilter: 'all' });
     if (id === 'distance') onChange({ radiusMiles: DEFAULT_RADIUS_MILES });
-    if (id === 'games') onChange({ games: defaultGames });
     if (id === 'price') onChange({ price: 'all' });
-  }
-
-  function toggleGame(game: Game) {
-    onChange({
-      games: value.games.includes(game)
-        ? value.games.filter(item => item !== game)
-        : [...value.games, game],
-    });
   }
 
   function clearAll() {
@@ -208,7 +165,7 @@ export function FilterBar({
     onChange({
       dateFilter: 'all',
       radiusMiles: DEFAULT_RADIUS_MILES,
-      games: defaultGames,
+      games: [],
       price: 'all',
     });
   }
@@ -294,57 +251,17 @@ export function FilterBar({
       );
     }
 
-    return (
-      <>
-        {catalog.ids.map(game => {
-          const selected = value.games.includes(game);
-          return (
-            <button
-              key={game}
-              type='button'
-              role='checkbox'
-              aria-checked={selected}
-              className={optionRowClasses(selected)}
-              onClick={() => toggleGame(game)}
-            >
-              <GameIcon
-                game={game}
-                className='size-4 shrink-0 object-contain'
-                decorative
-              />
-              <span className='flex-1 truncate'>{catalog.label(game)}</span>
-              {selected && <Check className='size-3.5 shrink-0' />}
-            </button>
-          );
-        })}
-        <div className='mt-1 flex gap-1 border-t border-border pt-1'>
-          <Button
-            variant='ghost'
-            size='xs'
-            className='flex-1'
-            onClick={() => onChange({ games: catalog.ids })}
-          >
-            Select all
-          </Button>
-          <Button
-            variant='ghost'
-            size='xs'
-            className='flex-1'
-            onClick={() => onChange({ games: defaultGames })}
-          >
-            Reset
-          </Button>
-        </div>
-      </>
-    );
+    return null;
   }
 
   const popoverWidths: Record<FilterId, string> = {
     date: 'w-52 p-1',
     distance: 'w-60 gap-3 p-3',
-    games: 'w-56 gap-1 p-1',
     price: 'w-44 p-1',
   };
+
+  const hasAddableOptions = availableGames.length > 0 || availableFilters.length > 0;
+  const hasActiveFilters = value.games.length > 0 || active.length > 0;
 
   return (
     <div
@@ -352,7 +269,7 @@ export function FilterBar({
       aria-label='Filters'
     >
       <div className='flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'>
-        {availableFilters.length > 0 && (
+        {hasAddableOptions && (
           <Popover open={addMenuOpen} onOpenChange={setAddMenuOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -364,35 +281,95 @@ export function FilterBar({
                 Filter
               </Button>
             </PopoverTrigger>
-            {/*
-              Returning focus to this trigger on close would land as a focus
-              event outside the value popover that addFilter opens, dismissing it
-              on the same tick.
-            */}
             <PopoverContent
               align='start'
-              className='w-44 p-1'
+              className='w-56 p-1 max-h-80 overflow-y-auto'
               onCloseAutoFocus={event => event.preventDefault()}
             >
-              {availableFilters.map(id => {
-                const definition = FILTERS[id];
-                const Icon = definition.icon;
-                return (
-                  <button
-                    key={id}
-                    type='button'
-                    className={optionRowClasses(false)}
-                    onClick={() => addFilter(id)}
-                  >
-                    <Icon className='size-3.5 text-muted-foreground' />
-                    <span className='flex-1'>{definition.label}</span>
-                  </button>
-                );
-              })}
+              {availableGames.length > 0 && (
+                <div className='space-y-0.5'>
+                  <div className='px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground'>
+                    Games
+                  </div>
+                  {availableGames.map(game => (
+                    <button
+                      key={game}
+                      type='button'
+                      className={optionRowClasses(false)}
+                      onClick={() => {
+                        onChange({ games: [...value.games, game] });
+                        setAddMenuOpen(false);
+                      }}
+                    >
+                      <GameIcon
+                        game={game}
+                        className='size-4 shrink-0 object-contain'
+                        decorative
+                      />
+                      <span className='flex-1 truncate'>{catalog.label(game)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {availableGames.length > 0 && availableFilters.length > 0 && (
+                <div className='my-1 border-t border-border' />
+              )}
+
+              {availableFilters.length > 0 && (
+                <div className='space-y-0.5'>
+                  {availableGames.length > 0 && (
+                    <div className='px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground'>
+                      Filters
+                    </div>
+                  )}
+                  {availableFilters.map(id => {
+                    const definition = FILTERS[id];
+                    const Icon = definition.icon;
+                    return (
+                      <button
+                        key={id}
+                        type='button'
+                        className={optionRowClasses(false)}
+                        onClick={() => addFilter(id)}
+                      >
+                        <Icon className='size-3.5 text-muted-foreground' />
+                        <span className='flex-1'>{definition.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </PopoverContent>
           </Popover>
         )}
 
+        {/* Game Chips (First) */}
+        {value.games.map(game => (
+          <FilterChip key={game}>
+            <FilterChipValue
+              className='gap-1.5 pl-2 pr-1 font-medium hover:bg-transparent cursor-default'
+              tabIndex={-1}
+            >
+              <GameIcon
+                game={game}
+                className='size-3.5 shrink-0 object-contain'
+                decorative
+              />
+              <span>{catalog.label(game)}</span>
+            </FilterChipValue>
+            <FilterChipRemove
+              label={`Remove ${catalog.label(game)} filter`}
+              onClick={() => {
+                onChange({
+                  games: value.games.filter(g => g !== game),
+                });
+              }}
+            />
+          </FilterChip>
+        ))}
+
+        {/* Standard Filter Chips */}
         {active.map(id => {
           const definition = FILTERS[id];
           const Icon = definition.icon;
@@ -425,7 +402,7 @@ export function FilterBar({
         })}
       </div>
 
-      {active.length > 0 && (
+      {hasActiveFilters && (
         <Button
           variant='destructive'
           size='sm'
