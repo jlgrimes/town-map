@@ -240,9 +240,11 @@ function SignedInUserFooter({ setTab }: { setTab: (tab: Tab) => void }) {
             <User className="mr-2 size-4" />
             Account settings
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTab("preferences")}>
-            <SlidersHorizontal className="mr-2 size-4" />
-            App preferences
+          <DropdownMenuItem asChild>
+            <Link to="/preferences" className="cursor-pointer">
+              <SlidersHorizontal className="mr-2 size-4" />
+              App preferences
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
@@ -918,28 +920,32 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                   <SidebarMenu>
                     <SidebarMenuItem>
                       <SidebarMenuButton
+                        asChild
                         isActive={tab === "discover"}
                         tooltip="Discover"
-                        onClick={() => setTab("discover")}
                       >
-                        <Compass />
-                        <span>Discover</span>
+                        <Link to="/discover">
+                          <Compass />
+                          <span>Discover</span>
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
 
                     <SidebarMenuItem>
                       <SidebarMenuButton
+                        asChild
                         isActive={tab === "my-events"}
                         tooltip="My events"
-                        onClick={() => setTab("my-events")}
                       >
-                        <Bookmark />
-                        <span>My events</span>
-                        {canSave && savedEvents.length > 0 && (
-                          <SidebarMenuBadge className="font-medium group-data-[collapsible=icon]:hidden">
-                            {savedEvents.length}
-                          </SidebarMenuBadge>
-                        )}
+                        <Link to="/my-events">
+                          <Bookmark />
+                          <span>My events</span>
+                          {canSave && savedEvents.length > 0 && (
+                            <SidebarMenuBadge className="font-medium group-data-[collapsible=icon]:hidden">
+                              {savedEvents.length}
+                            </SidebarMenuBadge>
+                          )}
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   </SidebarMenu>

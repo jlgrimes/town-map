@@ -264,7 +264,7 @@ export function ExpandableEventCardModal({
                         <Typography variant="kicker" as="h4">
                           Description
                         </Typography>
-                        <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed whitespace-pre-line bg-muted/30 border rounded-2xl p-4">
+                        <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
                           {event.description}
                         </p>
                       </div>
