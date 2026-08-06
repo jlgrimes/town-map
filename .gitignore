@@ -12,3 +12,4 @@ apps/app/android/app/build
 apps/app/ios/App/Pods
 apps/app/ios/App/DerivedData
 .vercel
+.env*

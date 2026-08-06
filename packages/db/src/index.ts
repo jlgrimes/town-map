@@ -291,12 +291,67 @@ const SERIES_DRIFT_MINUTES = 60;
 const RETENTION_LOCK_ID = 8042027;
 
 /**
+ * Snapshot column on `saved_events` paired with the expression that fills it.
+ *
+ * Written once because two paths populate these columns -- saving an event and
+ * retention refreshing it just before deletion -- and a column filled by one but
+ * not the other would freeze a partly-empty record that nothing later can repair.
+ */
+const SAVED_EVENT_SNAPSHOT: ReadonlyArray<readonly [string, string]> = [
+  ["source", "e.source"],
+  ["source_event_id", "e.source_event_id"],
+  ["game", "e.game"],
+  ["title", "e.title"],
+  ["description", "e.description"],
+  ["starts_at", "e.starts_at"],
+  ["ends_at", "e.ends_at"],
+  ["timezone", "e.timezone"],
+  ["status", "e.status"],
+  ["format", "e.format"],
+  ["event_type", "e.event_type"],
+  ["source_url", "e.source_url"],
+  ["registration_url", "e.registration_url"],
+  ["price_amount", "e.price_amount"],
+  ["price_currency", "e.price_currency"],
+  ["capacity", "e.capacity"],
+  ["is_online", "e.is_online"],
+  ["withdrawn_at", "e.withdrawn_at"],
+  ["venue_name", "v.name"],
+  ["venue_address", "v.address"],
+  ["venue_city", "v.city"],
+  ["venue_region", "v.region"],
+  ["venue_postal_code", "v.postal_code"],
+  ["venue_latitude", "v.latitude"],
+  ["venue_longitude", "v.longitude"],
+  ["venue_website", "v.website"],
+];
+
+const snapshotColumns = SAVED_EVENT_SNAPSHOT.map(([column]) => column).join(", ");
+// Aliased, because a bare `v.name` comes out of a subquery called `name` and the
+// insert that reads it back is looking for `venue_name`.
+const snapshotProjection = SAVED_EVENT_SNAPSHOT
+  .map(([column, expression]) => `${expression} AS ${column}`)
+  .join(", ");
+const snapshotAssignments = SAVED_EVENT_SNAPSHOT
+  .map(([column, expression]) => `${column} = ${expression}`)
+  .join(", ");
+const snapshotExcluded = SAVED_EVENT_SNAPSHOT
+  .map(([column]) => `${column} = EXCLUDED.${column}`)
+  .join(", ");
+
+/**
  * Deletes events that finished longer ago than the retention window.
  *
- * Nothing reads past events — the API only serves `starts_at >= now()` — but
- * they accumulate forever and sit in every index on the table, including the
- * geography indexes that answer each map query. Raw payloads and any future
- * child rows are removed by cascade.
+ * Nothing reads past events from `events` -- the API only serves
+ * `starts_at >= now()` -- but they accumulate forever and sit in every index on
+ * the table, including the geography indexes that answer each map query. Raw
+ * payloads and any future child rows are removed by cascade.
+ *
+ * Saves are the exception: their foreign key is `ON DELETE SET NULL`, so a save
+ * outlives the event and falls back to the snapshot it carries. That snapshot is
+ * refreshed here, immediately before the delete, so what freezes is the event as
+ * it last stood rather than as it looked on the day someone saved it -- a year
+ * is long enough for a venue or a start time to have moved since.
  *
  * Deleted in bounded batches so a long-neglected database does not produce one
  * enormous transaction. Returns the number of events removed.
@@ -317,6 +372,19 @@ export async function deleteExpiredEvents(
 
   let deleted = 0;
   try {
+    // One statement for the whole expiring set rather than per batch: it touches
+    // only rows someone saved, which is a vanishing fraction of what expires,
+    // and doing it up front keeps the delete loop a plain delete loop.
+    await database.query(
+      `UPDATE saved_events se
+       SET ${snapshotAssignments}
+       FROM events e
+       LEFT JOIN venues v ON v.id = e.venue_id
+       WHERE se.event_id = e.id
+         AND e.starts_at < now() - make_interval(days => $1)`,
+      [retentionDays],
+    );
+
     for (;;) {
       const result = await database.query(
         `DELETE FROM events
@@ -1261,13 +1329,23 @@ export async function listEvents(query: EventLookup, database: Pick<Pool, "query
 }
 
 /**
- * One user's saved events, soonest first.
+ * One user's saved events -- upcoming soonest first, past most recent first.
  *
- * Past events are excluded rather than shown greyed out: retention deletes them
- * shortly afterwards anyway, so a list that included them would empty itself out
- * on a schedule the user cannot see. Withdrawn events are excluded for the same
- * reason the event list excludes them -- they are retained for audit, not to be
- * served.
+ * Two branches rather than one join with `COALESCE` per column. Where the event
+ * row survives it is authoritative for every field, including the ones it has
+ * since set back to null; coalescing column by column would let a description
+ * the organiser deleted resurface from the snapshot beside fields that had moved
+ * on. Preferring one whole row over the other keeps a list item internally
+ * consistent -- it is either the event as it stands or the event as it last
+ * stood, never a blend of the two.
+ *
+ * Withdrawn events stay excluded in both branches. `saved_events.withdrawn_at`
+ * exists for exactly this: without it a cancelled event would drop out of the
+ * list for a year and then reappear as somewhere the user had been.
+ *
+ * Series are null on archived rows. A series summary describes how often
+ * something recurs, which a frozen record of one past occurrence cannot answer
+ * and should not guess at.
  *
  * `distanceMiles` is null throughout. A save has no search origin attached, and
  * inventing one from the account's home would make the same row read differently
@@ -1278,18 +1356,60 @@ export async function listSavedEvents(
   database: Queryable = getPool(),
 ): Promise<SavedEvents> {
   const result = await database.query<EventRow>(
-    `SELECT ${eventSelect}, ${CURSOR_STARTS_AT}, NULL::double precision AS "distanceMeters"
-     FROM saved_events se
-     JOIN events e ON e.id = se.event_id
-     LEFT JOIN venues v ON v.id = e.venue_id
-     LEFT JOIN event_series s ON s.id = e.series_id
-     WHERE se.clerk_user_id = $1
-       AND e.withdrawn_at IS NULL
-       AND e.starts_at >= now()
-     ORDER BY e.starts_at ASC, e.id ASC`,
+    `WITH live AS (
+       SELECT ${eventSelect}, e.starts_at AS "orderStartsAt"
+       FROM saved_events se
+       JOIN events e ON e.id = se.event_id
+       LEFT JOIN venues v ON v.id = e.venue_id
+       LEFT JOIN event_series s ON s.id = e.series_id
+       WHERE se.clerk_user_id = $1
+         AND e.withdrawn_at IS NULL
+     ), archived AS (
+       SELECT
+         se.id, se.source, se.source_event_id AS "sourceEventId", se.game, se.title,
+         se.description, se.starts_at AS "startsAt", se.ends_at AS "endsAt",
+         se.timezone, se.status, se.format, se.event_type AS "eventType",
+         se.source_url AS "sourceUrl", se.registration_url AS "registrationUrl",
+         se.price_amount AS "priceAmount",
+         se.price_currency AS "priceCurrency", se.capacity, se.is_online AS "isOnline",
+         se.venue_name AS "venueName", se.venue_address AS "venueAddress",
+         se.venue_city AS "venueCity", se.venue_region AS "venueRegion",
+         se.venue_postal_code AS "venuePostalCode",
+         se.venue_latitude AS "venueLatitude", se.venue_longitude AS "venueLongitude",
+         se.venue_website AS "venueWebsite",
+         NULL::uuid AS "seriesId", NULL::integer AS "seriesCadenceDays",
+         NULL::integer AS "seriesOccurrenceCount", NULL::timestamptz AS "seriesNextStartsAt",
+         se.starts_at AS "orderStartsAt"
+       FROM saved_events se
+       WHERE se.clerk_user_id = $1
+         AND se.event_id IS NULL
+         AND se.withdrawn_at IS NULL
+     ), saved AS (
+       SELECT * FROM live
+       UNION ALL
+       SELECT * FROM archived
+     )
+     SELECT *,
+       to_char("orderStartsAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorStartsAt",
+       NULL::double precision AS "distanceMeters"
+     FROM saved
+     ORDER BY
+       ("orderStartsAt" >= now()) DESC,
+       CASE WHEN "orderStartsAt" >= now() THEN "orderStartsAt" END ASC,
+       CASE WHEN "orderStartsAt" < now() THEN "orderStartsAt" END DESC,
+       id ASC`,
     [clerkUserId],
   );
-  return { events: result.rows.map(toEventListItem), count: result.rows.length };
+
+  const now = Date.now();
+  const events = result.rows.map(toEventListItem);
+  const firstPast = events.findIndex((event) => Date.parse(event.startsAt) < now);
+  const boundary = firstPast === -1 ? events.length : firstPast;
+  return {
+    upcoming: events.slice(0, boundary),
+    past: events.slice(boundary),
+    count: events.length,
+  };
 }
 
 /**
@@ -1299,6 +1419,11 @@ export async function listSavedEvents(
  * already saved stays a success. `ON CONFLICT DO NOTHING` alone could not tell
  * that apart from an unknown id -- both write no row -- and the second time a
  * user tapped save they would be told the event does not exist.
+ *
+ * The snapshot is written here so that a save is self-sufficient from the moment
+ * it exists, rather than only from whenever retention next runs. Re-saving
+ * refreshes it: the row is already being touched, and the newer copy is by
+ * definition the better fallback.
  */
 export async function saveEvent(
   clerkUserId: string,
@@ -1307,11 +1432,14 @@ export async function saveEvent(
 ): Promise<boolean> {
   const result = await database.query<{ id: string }>(
     `WITH target AS (
-       SELECT id FROM events WHERE id = $2::uuid AND withdrawn_at IS NULL
+       SELECT e.id, ${snapshotProjection}
+       FROM events e
+       LEFT JOIN venues v ON v.id = e.venue_id
+       WHERE e.id = $2::uuid AND e.withdrawn_at IS NULL
      ), inserted AS (
-       INSERT INTO saved_events (clerk_user_id, event_id)
-       SELECT $1, id FROM target
-       ON CONFLICT (clerk_user_id, event_id) DO NOTHING
+       INSERT INTO saved_events (clerk_user_id, event_id, ${snapshotColumns})
+       SELECT $1, id, ${snapshotColumns} FROM target
+       ON CONFLICT (clerk_user_id, event_id) DO UPDATE SET ${snapshotExcluded}
        RETURNING event_id
      )
      SELECT id FROM target`,
@@ -1320,14 +1448,22 @@ export async function saveEvent(
   return result.rows.length > 0;
 }
 
-/** Removing a save that is not there is not an error, so this reports nothing. */
+/**
+ * Removing a save that is not there is not an error, so this reports nothing.
+ *
+ * Matched on either key because an archived save has no `event_id` left to
+ * address it by, and the list gives such a row its own id in that column. Both
+ * are UUIDs from the same generator, so one parameter covers both without any
+ * chance of a save id colliding with someone else's event id.
+ */
 export async function unsaveEvent(
   clerkUserId: string,
   eventId: string,
   database: Queryable = getPool(),
 ): Promise<void> {
   await database.query(
-    "DELETE FROM saved_events WHERE clerk_user_id = $1 AND event_id = $2::uuid",
+    `DELETE FROM saved_events
+     WHERE clerk_user_id = $1 AND (event_id = $2::uuid OR id = $2::uuid)`,
     [clerkUserId, eventId],
   );
 }

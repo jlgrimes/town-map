@@ -318,6 +318,11 @@ function eventDateKey(dateString: string) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
+const SAVED_SECTIONS = [
+  { key: "upcoming", heading: "Upcoming" },
+  { key: "past", heading: "Past" },
+] as const;
+
 function groupEventsByDate(events: EventListItem[]) {
   const groups: Array<{ key: string; label: string; events: EventListItem[] }> = [];
   for (const event of events) {
@@ -493,10 +498,17 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     }
   }, [locationHook.pathname, locationHook.search, locationHook.hash, navigate, tab]);
 
-  const [savedEvents, setSavedEvents] = useState<EventListItem[]>([]);
+  // Kept apart rather than as one list with a date comparison at render time.
+  // The two halves are ordered in opposite directions -- next event first,
+  // most recent visit first -- and the server already decided which is which
+  // against its own clock.
+  const [savedUpcoming, setSavedUpcoming] = useState<EventListItem[]>([]);
+  const [savedPast, setSavedPast] = useState<EventListItem[]>([]);
   const [savedStatus, setSavedStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [savedReloadKey, setSavedReloadKey] = useState(0);
+
+  const savedEvents = useMemo(() => [...savedUpcoming, ...savedPast], [savedUpcoming, savedPast]);
 
   const expandedEvent = useMemo(
     () => events.find((candidate) => candidate.id === expandedEventId) ?? savedEvents.find((candidate) => candidate.id === expandedEventId) ?? null,
@@ -512,7 +524,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     if (!auth.signedIn) {
       // Signing out has to clear the list rather than leave the previous
       // account's saves on screen for the next person to use this browser.
-      setSavedEvents([]);
+      setSavedUpcoming([]);
+      setSavedPast([]);
       setSavedStatus("idle");
       setSavedNotice(null);
       return;
@@ -521,7 +534,8 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     setSavedStatus("loading");
     fetchSavedEvents(auth.getToken, controller.signal)
       .then((saved) => {
-        setSavedEvents(saved.events);
+        setSavedUpcoming(saved.upcoming);
+        setSavedPast(saved.past);
         setSavedStatus("ready");
       })
       .catch((error: unknown) => {
@@ -538,20 +552,28 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
    */
   const toggleSaved = useCallback(async (eventId: string) => {
     if (!canSave) return;
-    const previous = savedEvents;
-    const wasSaved = previous.some((candidate) => candidate.id === eventId);
-    const event = previous.find((candidate) => candidate.id === eventId)
+    const previousUpcoming = savedUpcoming;
+    const previousPast = savedPast;
+    const wasSaved = savedEvents.some((candidate) => candidate.id === eventId);
+    const event = savedEvents.find((candidate) => candidate.id === eventId)
       ?? events.find((candidate) => candidate.id === eventId);
     if (!event) return;
     setSavedNotice(null);
-    setSavedEvents(wasSaved
-      ? previous.filter((candidate) => candidate.id !== eventId)
-      : sortEvents([...previous, event]));
+    if (wasSaved) {
+      // Removal is tried against both lists: taking an event back out of your
+      // history is the only way to correct one you saved but never went to.
+      setSavedUpcoming(previousUpcoming.filter((candidate) => candidate.id !== eventId));
+      setSavedPast(previousPast.filter((candidate) => candidate.id !== eventId));
+    } else {
+      // Only Discover offers a save, and Discover serves nothing in the past.
+      setSavedUpcoming(sortEvents([...previousUpcoming, event]));
+    }
     try {
       if (wasSaved) await unsaveEvent(eventId, auth.getToken);
       else await saveEvent(eventId, auth.getToken);
     } catch (error) {
-      setSavedEvents(previous);
+      setSavedUpcoming(previousUpcoming);
+      setSavedPast(previousPast);
       setSavedNotice(error instanceof Error && error.message
         ? error.message
         : (wasSaved
@@ -559,7 +581,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
           : "We couldn't save that event. Please try again."));
       console.error("Updating saved events failed", error);
     }
-  }, [auth.getToken, canSave, events, savedEvents]);
+  }, [auth.getToken, canSave, events, savedEvents, savedPast, savedUpcoming]);
 
   useEffect(() => {
     if (!auth.enabled || !auth.loaded) return;
@@ -933,9 +955,12 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                         <Link to="/my-events">
                           <Bookmark />
                           <span>My events</span>
-                          {canSave && savedEvents.length > 0 && (
+                          {/* Upcoming only. A badge counting a lifetime of past
+                              events would climb forever and stop meaning
+                              anything you need to act on. */}
+                          {canSave && savedUpcoming.length > 0 && (
                             <SidebarMenuBadge className="font-medium group-data-[collapsible=icon]:hidden">
-                              {savedEvents.length}
+                              {savedUpcoming.length}
                             </SidebarMenuBadge>
                           )}
                         </Link>
@@ -1142,7 +1167,10 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                       <p className="text-xs text-muted-foreground">
                         {savedStatus === "loading"
                           ? "Loading your events…"
-                          : `${savedEvents.length} ${savedEvents.length === 1 ? "event" : "events"} saved`}
+                          : [
+                            `${savedUpcoming.length} upcoming`,
+                            savedPast.length > 0 ? `${savedPast.length} past` : null,
+                          ].filter(Boolean).join(" · ")}
                       </p>
                     </div>
                   )}
@@ -1198,37 +1226,57 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                       </Empty>
                     ) : (
                       <div className="border-b" aria-label="Saved events">
-                        {groupEventsByDate(savedEvents).map((group) => (
-                          <section key={group.key} aria-labelledby={`saved-${group.key}`}>
-                            <Typography
-                              variant="kicker"
-                              as="h3"
-                              id={`saved-${group.key}`}
-                              className="border-b bg-muted/35 px-3 py-2 block"
-                            >
-                              {group.label}
-                            </Typography>
-                            <ol className="divide-y">
-                              {group.events.map((event) => (
-                                <EventRow
-                                  key={event.id}
-                                  event={event}
-                                  active={false}
-                                  saved
-                                  canSave={canSave}
-                                  layoutIdPrefix="saved"
-                                  onPreview={() => undefined}
-                                  onSelect={handleSavedSelect}
-                                  onToggleSave={toggleSaved}
-                                />
+                        {SAVED_SECTIONS.map(({ key, heading }) => {
+                          const sectionEvents = key === "upcoming" ? savedUpcoming : savedPast;
+                          if (sectionEvents.length === 0) return null;
+                          return (
+                            <section key={key} aria-labelledby={`saved-section-${key}`}>
+                              <Typography
+                                variant="kicker"
+                                as="h3"
+                                id={`saved-section-${key}`}
+                                className="border-b bg-muted/60 px-3 py-2.5 block font-semibold"
+                              >
+                                {heading}
+                              </Typography>
+                              {groupEventsByDate(sectionEvents).map((group) => (
+                                <section key={group.key} aria-labelledby={`saved-${key}-${group.key}`}>
+                                  <Typography
+                                    variant="kicker"
+                                    as="h4"
+                                    id={`saved-${key}-${group.key}`}
+                                    className="border-b bg-muted/35 px-3 py-2 block"
+                                  >
+                                    {group.label}
+                                  </Typography>
+                                  {/* Past rows are dimmed rather than hidden behind a
+                                      toggle: they are the record of where someone has
+                                      been, and the point of keeping them is that they
+                                      stay visible. */}
+                                  <ol className={key === "past" ? "divide-y opacity-70" : "divide-y"}>
+                                    {group.events.map((event) => (
+                                      <EventRow
+                                        key={event.id}
+                                        event={event}
+                                        active={false}
+                                        saved
+                                        canSave={canSave}
+                                        layoutIdPrefix="saved"
+                                        onPreview={() => undefined}
+                                        onSelect={handleSavedSelect}
+                                        onToggleSave={toggleSaved}
+                                      />
+                                    ))}
+                                  </ol>
+                                </section>
                               ))}
-                            </ol>
-                          </section>
-                        ))}
+                            </section>
+                          );
+                        })}
                       </div>
                     )}
                     <p className="px-2 py-5 text-xs text-muted-foreground">
-                      Verify details with the organizer. Past events drop off this list automatically.
+                      Verify details with the organizer. Events you have been to stay here after they finish.
                     </p>
                   </div>
                 </section>

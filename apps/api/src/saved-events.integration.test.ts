@@ -78,6 +78,9 @@ integration("/v1/saved-events", () => {
 
   beforeEach(async () => {
     currentUserId = "user_test";
+    // Saves outlive their events now, so clearing the events alone would leak
+    // archived rows from one test into the next.
+    await client.query("DELETE FROM saved_events");
     await client.query("DELETE FROM events");
   });
 
@@ -105,7 +108,8 @@ integration("/v1/saved-events", () => {
 
     const response = await list();
     expect(response.statusCode).toBe(200);
-    expect(response.json().events.map((event: { id: string }) => event.id)).toEqual([id]);
+    expect(response.json().upcoming.map((event: { id: string }) => event.id)).toEqual([id]);
+    expect(response.json().past).toEqual([]);
     expect(response.json().count).toBe(1);
   });
 

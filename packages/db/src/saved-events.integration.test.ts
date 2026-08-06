@@ -13,12 +13,14 @@ let upsertEvents: typeof import("./index.js").upsertEvents;
 let listSavedEvents: typeof import("./index.js").listSavedEvents;
 let saveEvent: typeof import("./index.js").saveEvent;
 let unsaveEvent: typeof import("./index.js").unsaveEvent;
+let deleteExpiredEvents: typeof import("./index.js").deleteExpiredEvents;
 
 const ALICE = "user_alice";
 const BOB = "user_bob";
 const FUTURE = "2035-06-01T18:00:00.000Z";
 const LATER = "2035-06-08T18:00:00.000Z";
 const PAST = "2020-06-01T18:00:00.000Z";
+const OLDER = "2019-06-01T18:00:00.000Z";
 // Well-formed but belonging to no row, which is what a stale client page holds.
 const MISSING_EVENT_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -68,7 +70,17 @@ async function eventId(sourceEventId: string) {
 
 async function savedIds(clerkUserId: string) {
   const saved = await listSavedEvents(clerkUserId, client);
-  return saved.events.map((item) => item.sourceEventId);
+  return [...saved.upcoming, ...saved.past].map((item) => item.sourceEventId);
+}
+
+async function upcomingIds(clerkUserId: string) {
+  const saved = await listSavedEvents(clerkUserId, client);
+  return saved.upcoming.map((item) => item.sourceEventId);
+}
+
+async function pastIds(clerkUserId: string) {
+  const saved = await listSavedEvents(clerkUserId, client);
+  return saved.past.map((item) => item.sourceEventId);
 }
 
 integration("saved events", () => {
@@ -82,10 +94,13 @@ integration("saved events", () => {
     const url = new URL(connectionString!);
     url.searchParams.set("options", `-c search_path=${schema}`);
     process.env.DATABASE_URL = url.toString();
-    ({ closePool, upsertEvents, listSavedEvents, saveEvent, unsaveEvent } = await import("./index.js"));
+    ({ closePool, upsertEvents, listSavedEvents, saveEvent, unsaveEvent, deleteExpiredEvents } = await import("./index.js"));
   }, 60_000);
 
   beforeEach(async () => {
+    // Saves outlive their events now, so clearing the events alone would leak
+    // archived rows from one test into the next.
+    await client.query("DELETE FROM saved_events");
     await client.query("DELETE FROM events");
   });
 
@@ -102,7 +117,8 @@ integration("saved events", () => {
     await saveEvent(ALICE, await eventId("a"), client);
 
     const saved = await listSavedEvents(ALICE, client);
-    expect(saved.events.map((item) => item.sourceEventId)).toEqual(["a", "b"]);
+    expect(saved.upcoming.map((item) => item.sourceEventId)).toEqual(["a", "b"]);
+    expect(saved.past).toEqual([]);
     expect(saved.count).toBe(2);
   });
 
@@ -159,22 +175,100 @@ integration("saved events", () => {
     expect(await savedIds(ALICE)).toEqual([]);
   });
 
-  it("drops a saved event once it is in the past", async () => {
+  it("files a saved event under past once it has started", async () => {
     await upsertEvents("wotc-locator", [event("old", PAST), event("a", FUTURE)]);
     await saveEvent(ALICE, await eventId("old"), client);
     await saveEvent(ALICE, await eventId("a"), client);
 
-    expect(await savedIds(ALICE)).toEqual(["a"]);
+    expect(await upcomingIds(ALICE)).toEqual(["a"]);
+    expect(await pastIds(ALICE)).toEqual(["old"]);
   });
 
-  it("forgets the save when retention deletes the event", async () => {
-    await upsertEvents("wotc-locator", [event("a", FUTURE)]);
+  it("orders past events most recent first", async () => {
+    await upsertEvents("wotc-locator", [event("older", OLDER), event("old", PAST)]);
+    await saveEvent(ALICE, await eventId("older"), client);
+    await saveEvent(ALICE, await eventId("old"), client);
+
+    expect(await pastIds(ALICE)).toEqual(["old", "older"]);
+  });
+
+  // The whole point of the snapshot: the event row is gone and the entry is not.
+  it("keeps the save when retention deletes the event", async () => {
+    await upsertEvents("wotc-locator", [event("a", PAST)]);
     await saveEvent(ALICE, await eventId("a"), client);
 
-    await client.query("DELETE FROM events WHERE source_event_id = 'a'");
+    await deleteExpiredEvents(1, { database: client });
+
+    expect(await client.query("SELECT id FROM events")).toMatchObject({ rowCount: 0 });
+    const saved = await listSavedEvents(ALICE, client);
+    expect(saved.past.map((item) => item.sourceEventId)).toEqual(["a"]);
+    expect(saved.past[0]).toMatchObject({
+      title: "Event a",
+      game: "magic",
+      isOnline: false,
+      venue: { name: "Chicago Center", city: "Chicago", region: "IL" },
+      // Nothing left to describe a recurrence with once the occurrences are gone.
+      series: null,
+    });
+  });
+
+  // Retention refreshes the snapshot on its way past, so the frozen copy is the
+  // event as it last stood rather than as it looked on the day it was saved.
+  it("freezes the event as it last stood, not as it was saved", async () => {
+    await upsertEvents("wotc-locator", [event("a", PAST)]);
+    await saveEvent(ALICE, await eventId("a"), client);
+    await client.query("UPDATE events SET title = 'Renamed after saving'");
+
+    await deleteExpiredEvents(1, { database: client });
+
+    const saved = await listSavedEvents(ALICE, client);
+    expect(saved.past[0]).toMatchObject({ title: "Renamed after saving" });
+  });
+
+  // Without a snapshotted `withdrawn_at`, a cancelled event would vanish for a
+  // year and then resurface as somewhere the user had been.
+  it("keeps a withdrawn event hidden after its row is deleted", async () => {
+    await upsertEvents("wotc-locator", [event("a", PAST)]);
+    await saveEvent(ALICE, await eventId("a"), client);
+    await client.query("UPDATE events SET withdrawn_at = now()");
+
+    await deleteExpiredEvents(1, { database: client });
+
+    expect(await savedIds(ALICE)).toEqual([]);
+  });
+
+  it("removes an archived save addressed by its own id", async () => {
+    await upsertEvents("wotc-locator", [event("a", PAST)]);
+    await saveEvent(ALICE, await eventId("a"), client);
+    await deleteExpiredEvents(1, { database: client });
+
+    const saved = await listSavedEvents(ALICE, client);
+    await unsaveEvent(ALICE, saved.past[0].id, client);
 
     expect(await savedIds(ALICE)).toEqual([]);
     const remaining = await client.query<{ count: string }>("SELECT count(*)::text AS count FROM saved_events");
     expect(remaining.rows[0].count).toBe("0");
+  });
+
+  it("does not let one account remove another's archived save", async () => {
+    await upsertEvents("wotc-locator", [event("a", PAST)]);
+    await saveEvent(ALICE, await eventId("a"), client);
+    await deleteExpiredEvents(1, { database: client });
+
+    const saved = await listSavedEvents(ALICE, client);
+    await unsaveEvent(BOB, saved.past[0].id, client);
+
+    expect(await savedIds(ALICE)).toEqual(["a"]);
+  });
+
+  it("archives the same event separately for each account", async () => {
+    await upsertEvents("wotc-locator", [event("a", PAST)]);
+    await saveEvent(ALICE, await eventId("a"), client);
+    await saveEvent(BOB, await eventId("a"), client);
+
+    await deleteExpiredEvents(1, { database: client });
+
+    expect(await pastIds(ALICE)).toEqual(["a"]);
+    expect(await pastIds(BOB)).toEqual(["a"]);
   });
 });

@@ -21,7 +21,7 @@ services/ingest-yugioh      KONAMI Card Game Network collector
 services/ingest-pokemon     Pokedata Pokémon TCG collector
 services/ingest-onepiece    Bandai TCG+ One Piece collector
 services/ingest-riftbound   Riftbound locator collector
-services/maintenance        Scheduled retention of past events
+services/maintenance        Scheduled retention of past events (saves survive it)
 ```
 
 ## Local development
@@ -47,7 +47,9 @@ Place searches run through the API's configurable `GEOCODER_URL`. The default Op
 
 ## Retention
 
-`services/maintenance` runs daily and deletes events that finished more than `EVENT_RETENTION_DAYS` ago (365 by default), cascading to their stored upstream payloads. Nothing reads past events — the API only serves `starts_at >= now()` — but they otherwise accumulate forever in the indexes that answer every map query. Deleting frees the space for reuse inside the table rather than returning it to the operating system; reclaiming that needs `VACUUM FULL` or `pg_repack`. When volume makes a daily delete too coarse, range-partitioning `events` on `starts_at` turns retention into dropping a partition.
+`services/maintenance` runs daily and deletes events that finished more than `EVENT_RETENTION_DAYS` ago (365 by default), cascading to their stored upstream payloads. Nothing reads past events from `events` — the API only serves `starts_at >= now()` — but they otherwise accumulate forever in the indexes that answer every map query. Deleting frees the space for reuse inside the table rather than returning it to the operating system; reclaiming that needs `VACUUM FULL` or `pg_repack`. When volume makes a daily delete too coarse, range-partitioning `events` on `starts_at` turns retention into dropping a partition.
+
+Saves are the one thing that outlives retention. `saved_events.event_id` is `ON DELETE SET NULL`, not a cascade, and each row carries a snapshot of the event it was made against — enough to render the entry with no `events` row behind it. Retention refreshes that snapshot immediately before deleting, so what freezes is the event as it last stood. This is what makes "My events" a history rather than only a forward-looking list, and it is why `events` stays free to be a pure cache of upstream: nothing a user owns is pinned to it. A save whose event is still live reads from the event, not the snapshot, so corrections upstream continue to reach it right up until the row is deleted.
 
 ## Collector checks
 

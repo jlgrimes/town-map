@@ -173,13 +173,25 @@ export type EventPage = z.infer<typeof EventPageSchema>;
 export const EventIdSchema = z.string().uuid();
 
 /**
- * Response of `GET /v1/saved-events`, ordered soonest first.
+ * Response of `GET /v1/saved-events`.
+ *
+ * Split by the server rather than returned flat with a date for the client to
+ * compare against: "past" depends on the current time, and a device with a
+ * skewed clock would otherwise file an event under the wrong heading. The two
+ * lists are ordered by what each is for -- `upcoming` soonest first, because it
+ * answers "what is next", and `past` most recent first, because it answers
+ * "where have I been".
+ *
+ * A past entry may outlive the event it came from: saves carry their own copy of
+ * the event, so retention deleting the event empties the copy's series summary
+ * and freezes its details, but does not remove the entry.
  *
  * Uncursored, unlike `EventPage`: a saved list is bounded by how many events one
  * person chose to save, not by how many exist near them.
  */
 export const SavedEventsSchema = z.object({
-  events: z.array(EventListItemSchema),
+  upcoming: z.array(EventListItemSchema),
+  past: z.array(EventListItemSchema),
   count: z.number().int().nonnegative(),
 });
 export type SavedEvents = z.infer<typeof SavedEventsSchema>;
