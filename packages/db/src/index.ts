@@ -817,7 +817,29 @@ async function upsertVenues(client: PoolClient, source: EventSource, events: Nor
   for (const event of events) if (event.venue) venues.set(event.venue.sourceVenueId, event.venue);
   if (!venues.size) return new Map<string, string>();
 
-  const payload = [...venues.values()].map((venue) => ({
+  // Isolated the same way events are. A venue that cannot be written is absent
+  // from the ids read back below, so its events are stored without one rather
+  // than not stored at all.
+  await writeIsolatingFailures(
+    client,
+    [...venues.values()],
+    (batch) => insertVenueRows(client, source, batch),
+    (venue) => `${source} venue ${venue.sourceVenueId}`,
+  );
+
+  // Unchanged rows are skipped by the guard in the insert and so are absent
+  // from RETURNING; read the ids back separately to cover every referenced venue.
+  const result = await client.query<{ id: string; sourceVenueId: string }>(
+    `SELECT id, source_venue_id AS "sourceVenueId"
+     FROM venues
+     WHERE source = $1 AND source_venue_id = ANY($2::text[])`,
+    [source, [...venues.keys()]],
+  );
+  return new Map(result.rows.map((row) => [row.sourceVenueId, row.id]));
+}
+
+async function insertVenueRows(client: PoolClient, source: EventSource, venues: NormalizedVenue[]) {
+  const payload = venues.map((venue) => ({
     source_venue_id: venue.sourceVenueId,
     name: venue.name,
     address: venue.address,
@@ -848,16 +870,6 @@ async function upsertVenues(client: PoolClient, source: EventSource, events: Nor
      WHERE ${changedPredicate("venues", VENUE_MUTABLE_COLUMNS)}`,
     [source, JSON.stringify(payload)],
   );
-
-  // Unchanged rows are skipped by the guard above and so are absent from
-  // RETURNING; read the ids back separately to cover every referenced venue.
-  const result = await client.query<{ id: string; sourceVenueId: string }>(
-    `SELECT id, source_venue_id AS "sourceVenueId"
-     FROM venues
-     WHERE source = $1 AND source_venue_id = ANY($2::text[])`,
-    [source, [...venues.keys()]],
-  );
-  return new Map(result.rows.map((row) => [row.sourceVenueId, row.id]));
 }
 
 /**
@@ -1012,24 +1024,27 @@ export async function upsertEvents(
   source: EventSource,
   events: NormalizedEvent[],
   options: { collectionRegionId?: string | null; batchSize?: number } = {},
-) {
-  if (!events.length) return 0;
+): Promise<{ written: number; skipped: number }> {
+  if (!events.length) return { written: 0, skipped: 0 };
   const { collectionRegionId = null, batchSize = 500 } = options;
   // `ON CONFLICT` cannot touch the same row twice in one statement, so collapse
   // duplicate ids first. Later entries win, matching the previous row-by-row order.
   const deduplicated = [...new Map(events.map((event) => [event.sourceEventId, event])).values()];
   const client = await getPool().connect();
+  let written = 0;
+  let skipped = 0;
   try {
     await client.query("BEGIN");
     const venueIds = await upsertVenues(client, source, deduplicated);
     for (let offset = 0; offset < deduplicated.length; offset += batchSize) {
-      await upsertEventBatch(
+      const outcome = await writeIsolatingFailures(
         client,
-        source,
         deduplicated.slice(offset, offset + batchSize),
-        venueIds,
-        collectionRegionId,
+        (batch) => upsertEventBatch(client, source, batch, venueIds, collectionRegionId),
+        (event) => `${source} event ${event.sourceEventId}`,
       );
+      written += outcome.written;
+      skipped += outcome.skipped;
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -1038,7 +1053,56 @@ export async function upsertEvents(
   } finally {
     client.release();
   }
-  return deduplicated.length;
+  return { written, skipped };
+}
+
+/**
+ * Writes rows in bulk, and when the write fails, splits and retries so that a
+ * row PostgreSQL rejects costs only itself.
+ *
+ * Collectors write a region's events in one transaction, so before this a
+ * single value the schema would not take -- a headcount past `integer`, a
+ * character `jsonb` does not allow -- discarded everything collected alongside
+ * it, every run, for as long as the source kept publishing it. Validation
+ * rejects the shapes we can name; this is what keeps the one we have not met
+ * yet down to the row that carries it.
+ *
+ * Halving rather than retrying row by row: an intact batch costs one extra
+ * statement, and a bad row is isolated in a number of rounds logarithmic in the
+ * batch size instead of one statement per event.
+ */
+async function writeIsolatingFailures<TRow>(
+  client: PoolClient,
+  rows: TRow[],
+  write: (rows: TRow[]) => Promise<void>,
+  describe: (row: TRow) => string,
+  depth = 0,
+): Promise<{ written: number; skipped: number }> {
+  if (!rows.length) return { written: 0, skipped: 0 };
+  // A failed statement poisons the transaction until it is rolled back, and the
+  // savepoint is what confines that to the rows being attempted. Named by depth
+  // because the retries below nest.
+  const savepoint = `write_attempt_${depth}`;
+  await client.query(`SAVEPOINT ${savepoint}`);
+  try {
+    await write(rows);
+    await client.query(`RELEASE SAVEPOINT ${savepoint}`);
+    return { written: rows.length, skipped: 0 };
+  } catch (error) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+    await client.query(`RELEASE SAVEPOINT ${savepoint}`);
+    if (rows.length === 1) {
+      console.warn(`Skipped ${describe(rows[0])}: ${error instanceof Error ? error.message : String(error)}`);
+      return { written: 0, skipped: 1 };
+    }
+    const middle = Math.ceil(rows.length / 2);
+    const first = await writeIsolatingFailures(client, rows.slice(0, middle), write, describe, depth + 1);
+    const second = await writeIsolatingFailures(client, rows.slice(middle), write, describe, depth + 1);
+    return {
+      written: first.written + second.written,
+      skipped: first.skipped + second.skipped,
+    };
+  }
 }
 
 export async function upsertEvent(source: EventSource, event: NormalizedEvent) {

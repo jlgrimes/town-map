@@ -82,7 +82,7 @@ integration("collector writes", () => {
   it("writes one venue for many events sharing it and denormalises its coordinates", async () => {
     const events = [event(1), event(2), event(3)];
 
-    await expect(upsertEvents("wotc-locator", events)).resolves.toBe(3);
+    await expect(upsertEvents("wotc-locator", events)).resolves.toEqual({ written: 3, skipped: 0 });
 
     const venues = await client.query<{ count: string }>("SELECT count(*)::text FROM venues");
     expect(venues.rows[0].count).toBe("1");
@@ -127,7 +127,7 @@ integration("collector writes", () => {
     await expect(upsertEvents("wotc-locator", [
       event(9, { title: "First" }),
       event(9, { title: "Last" }),
-    ])).resolves.toBe(1);
+    ])).resolves.toEqual({ written: 1, skipped: 0 });
 
     const stored = await client.query<{ title: string }>(
       "SELECT title FROM events WHERE source_event_id = 'event-9'",
@@ -147,7 +147,8 @@ integration("collector writes", () => {
   });
 
   it("stores events that have no venue", async () => {
-    await expect(upsertEvents("wotc-locator", [event(20, { venue: null })])).resolves.toBe(1);
+    await expect(upsertEvents("wotc-locator", [event(20, { venue: null })]))
+      .resolves.toEqual({ written: 1, skipped: 0 });
 
     const stored = await client.query<{ venueId: string | null; latitude: number | null }>(
       `SELECT venue_id AS "venueId", latitude FROM events WHERE source_event_id = 'event-20'`,
@@ -197,15 +198,44 @@ integration("collector writes", () => {
     expect(after.rows[0].computedAt.getTime()).toBeGreaterThanOrEqual(first.rows[0].computedAt.getTime());
   });
 
-  it("writes nothing when a batch fails partway", async () => {
-    const before = await client.query<{ count: string }>("SELECT count(*)::text FROM events");
-
+  // A region is written in one transaction, so a row PostgreSQL rejects used to
+  // discard every event collected alongside it -- and did so again on every run,
+  // for as long as the source kept publishing it.
+  it("skips a row PostgreSQL rejects and writes the rest of the batch", async () => {
     await expect(upsertEvents("wotc-locator", [
       event(30),
       event(31, { startsAt: "not-a-timestamp" }),
-    ])).rejects.toThrow();
+      event(32),
+    ])).resolves.toEqual({ written: 2, skipped: 1 });
 
-    const after = await client.query<{ count: string }>("SELECT count(*)::text FROM events");
-    expect(after.rows[0].count).toBe(before.rows[0].count);
+    const stored = await client.query<{ sourceEventId: string }>(
+      `SELECT source_event_id AS "sourceEventId" FROM events
+       WHERE source_event_id = ANY($1::text[]) ORDER BY source_event_id`,
+      [["event-30", "event-31", "event-32"]],
+    );
+    expect(stored.rows.map((row) => row.sourceEventId)).toEqual(["event-30", "event-32"]);
+  });
+
+  it("keeps a venue it cannot write from costing the events that reference it", async () => {
+    // NUL is rejected by `text`, and reaches a venue website the same way it
+    // reaches any other free-text field. `NormalizedEventSchema` strips it
+    // before a collector gets here; this is what happens if anything ever
+    // slips past that. Deliberately a field the event does not copy: the venue
+    // name is denormalised into `search_text`, so a bad character there is the
+    // event's problem too, not only the venue's.
+    const unwritable = {
+      ...event(33).venue!,
+      sourceVenueId: "venue-unwritable",
+      website: `https://example.com/${String.fromCharCode(0)}`,
+    };
+
+    await expect(upsertEvents("wotc-locator", [event(33, { venue: unwritable })]))
+      .resolves.toEqual({ written: 1, skipped: 0 });
+
+    const stored = await client.query<{ venueId: string | null }>(
+      `SELECT venue_id AS "venueId" FROM events WHERE source_event_id = $1`,
+      ["event-33"],
+    );
+    expect(stored.rows[0].venueId).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
+import { normalizeAll, runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeOnePieceEvent, type BandaiEvent } from "./normalize.js";
 
 const ENDPOINT = "https://api.bandai-tcg-plus.com/api/user/event/list";
@@ -84,8 +84,13 @@ export async function collectOnePieceRegion(region: OnePieceRegion): Promise<Nor
 
   for (let page = 0; page < maxPages; page += 1) {
     const result = await search(region, page * pageSize, pageSize, startDate, endDate);
-    for (const event of result.events) {
-      const normalized = normalizeOnePieceEvent(event);
+    const normalizedPage = normalizeAll(
+      "bandai-tcg-plus",
+      result.events,
+      normalizeOnePieceEvent,
+      (event) => String(event.id),
+    );
+    for (const normalized of normalizedPage) {
       if (new Date(normalized.startsAt).getTime() >= Date.now() - 7_200_000) unique.set(normalized.sourceEventId, normalized);
     }
     if ((page + 1) * pageSize >= result.total) return [...unique.values()];

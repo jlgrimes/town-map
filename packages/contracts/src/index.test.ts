@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CoverageResponseSchema,
+  NormalizedEventSchema,
   EventPageSchema,
   EventQuerySchema,
   GameSchema,
@@ -109,5 +110,63 @@ describe("recurrenceLabel", () => {
   it("says nothing when the cadence is not established", () => {
     expect(recurrenceLabel(series(null))).toBeNull();
     expect(recurrenceLabel(null)).toBeNull();
+  });
+});
+
+describe("NormalizedEventSchema", () => {
+  function event(overrides: Record<string, unknown> = {}) {
+    return {
+      sourceEventId: "evt-1",
+      game: "magic",
+      title: "Friday Night Magic",
+      startsAt: "2030-06-01T18:00:00.000Z",
+      raw: {},
+      ...overrides,
+    };
+  }
+
+  // PostgreSQL rejects NUL in text and in jsonb, and one of them used to fail
+  // every event written in the same batch.
+  it("strips NUL from text, from the venue and from the raw payload", () => {
+    const nul = String.fromCharCode(0);
+    const parsed = NormalizedEventSchema.parse(event({
+      title: `Friday${nul} Night`,
+      description: `Bring${nul} a deck`,
+      venue: { sourceVenueId: "v-1", name: `The${nul} Store` },
+      raw: { note: `raw${nul} text`, nested: [`deep${nul} text`] },
+    }));
+
+    expect(parsed.title).toBe("Friday Night");
+    expect(parsed.description).toBe("Bring a deck");
+    expect(parsed.venue?.name).toBe("The Store");
+    expect(parsed.raw).toEqual({ note: "raw text", nested: ["deep text"] });
+  });
+
+  // Descriptive fields are worth less than the event carrying them, so an
+  // unstorable value costs itself rather than the row -- or the batch.
+  it.each([
+    ["capacity", 2_147_483_648],
+    ["capacity", 12.5],
+    ["capacity", -1],
+    ["priceAmount", 100_000_000],
+    ["priceAmount", -5],
+  ])("nulls %s when the column could not hold %s", (field, value) => {
+    const parsed = NormalizedEventSchema.parse(event({ [field]: value }));
+    expect(parsed[field as "capacity" | "priceAmount"]).toBeNull();
+  });
+
+  it("keeps values the column can hold", () => {
+    const parsed = NormalizedEventSchema.parse(event({ capacity: 64, priceAmount: 12.5 }));
+    expect(parsed.capacity).toBe(64);
+    expect(parsed.priceAmount).toBe(12.5);
+  });
+
+  // What identifies an occurrence stays strict: an event without these is not
+  // an event, and storing it would be worse than dropping it.
+  it.each([
+    ["title", ""],
+    ["startsAt", "not-a-timestamp"],
+  ])("rejects an event with an unusable %s", (field, value) => {
+    expect(NormalizedEventSchema.safeParse(event({ [field]: value })).success).toBe(false);
   });
 });

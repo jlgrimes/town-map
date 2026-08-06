@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
+import { normalizeAll, runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { parse } from "csv-parse/sync";
 import { normalizePokemonEvent, type PokedataEvent } from "./normalize.js";
 
@@ -80,8 +80,7 @@ async function download(country: string): Promise<PokedataEvent[]> {
 export async function collectPokemonRegion(country: string): Promise<NormalizedEvent[]> {
   const unique = new Map<string, NormalizedEvent>();
   const rows = await download(country);
-  for (const row of rows) {
-    const event = normalizePokemonEvent(row);
+  for (const event of normalizeAll("pokedata-events", rows, normalizePokemonEvent, (row) => row.guid)) {
     unique.set(event.sourceEventId, event);
   }
   if (!unique.size) throw new Error("Pokedata returned no upcoming Pokémon TCG events");

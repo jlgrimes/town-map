@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
+import { normalizeAll, runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeRiftboundEvent, type RiftboundEvent } from "./normalize.js";
 
 const ENDPOINT = "https://api.riftbound.uvsgames.com/api/v2/events/";
@@ -78,10 +78,13 @@ export async function collectRiftboundRegion(center: SearchCenter): Promise<Norm
 
   for (let page = 1; page <= maxPages; page += 1) {
     const result = await search(center, page, from, to);
-    for (const event of result.results!) {
-      const normalized = normalizeRiftboundEvent(event);
-      unique.set(normalized.sourceEventId, normalized);
-    }
+    const normalizedPage = normalizeAll(
+      "riftbound-locator",
+      result.results!,
+      normalizeRiftboundEvent,
+      (event) => String(event.id),
+    );
+    for (const normalized of normalizedPage) unique.set(normalized.sourceEventId, normalized);
     if (!result.next) return [...unique.values()];
   }
   throw new Error(`Riftbound locator exceeded RIFTBOUND_MAX_PAGES (${maxPages}) for ${center.name}`);

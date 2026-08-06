@@ -23,8 +23,86 @@ export type RegionalCollector<TConfig extends Record<string, unknown>> = (
   region: RegionalCollectionDefinition<TConfig>,
 ) => Promise<NormalizedEvent[]>;
 
-function validateEvents(collected: NormalizedEvent[]) {
-  return collected.map((event) => NormalizedEventSchema.parse(event));
+/**
+ * How much of a batch may be discarded before the run is treated as a broken
+ * source rather than as bad rows.
+ *
+ * Individual malformed records are normal and cost only themselves. A source
+ * that changes shape invalidates everything at once, and silently collecting
+ * nothing is the failure mode worth shouting about, so past this share the
+ * region fails and keeps whatever it already had.
+ */
+function maxSkippedShare() {
+  const configured = process.env.COLLECTOR_MAX_SKIPPED_SHARE;
+  if (configured === undefined) return 0.5;
+  const value = Number(configured);
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error("COLLECTOR_MAX_SKIPPED_SHARE must be a number between 0 and 1");
+  }
+  return value;
+}
+
+/** Number of discarded records described in full before the rest are counted only. */
+const REPORTED_SKIP_LIMIT = 5;
+
+function reportSkipped(source: EventSource, stage: string, skipped: string[], total: number) {
+  if (!skipped.length) return;
+  const share = skipped.length / total;
+  const summary = `${source}: ${stage} discarded ${skipped.length} of ${total} record(s)`;
+  const detail = skipped.slice(0, REPORTED_SKIP_LIMIT).join("; ");
+  if (share > maxSkippedShare()) {
+    throw new Error(`${summary}, which is more than one source can lose to bad records: ${detail}`);
+  }
+  console.warn(`${summary}: ${detail}`);
+}
+
+/**
+ * Normalizes upstream records, dropping the ones that cannot be normalized.
+ *
+ * A normalizer reads whatever a source published, so a single record with a
+ * missing date or an unparseable field can throw. Without this that exception
+ * escaped the collector and discarded every record gathered alongside it.
+ */
+export function normalizeAll<TRow>(
+  source: EventSource,
+  rows: readonly TRow[],
+  normalize: (row: TRow) => NormalizedEvent,
+  identify: (row: TRow) => string,
+): NormalizedEvent[] {
+  const events: NormalizedEvent[] = [];
+  const skipped: string[] = [];
+  for (const row of rows) {
+    try {
+      events.push(normalize(row));
+    } catch (error) {
+      skipped.push(`${identify(row)} (${error instanceof Error ? error.message : String(error)})`);
+    }
+  }
+  reportSkipped(source, "normalizing", skipped, rows.length);
+  return events;
+}
+
+/**
+ * Validates collected events, dropping the ones that do not describe an event.
+ *
+ * Descriptive fields a source got wrong are already coerced to null by the
+ * schema, so what reaches here is an event missing its identity -- no title, no
+ * start -- and storing it would be worse than losing it.
+ */
+function validateEvents(source: EventSource, collected: NormalizedEvent[]) {
+  const events: NormalizedEvent[] = [];
+  const skipped: string[] = [];
+  for (const event of collected) {
+    const result = NormalizedEventSchema.safeParse(event);
+    if (result.success) {
+      events.push(result.data);
+      continue;
+    }
+    const paths = result.error.issues.map((issue) => issue.path.join(".") || "(root)").join(", ");
+    skipped.push(`${event?.sourceEventId ?? "(no id)"} (invalid: ${paths})`);
+  }
+  reportSkipped(source, "validation", skipped, collected.length);
+  return events;
 }
 
 function positiveIntegerEnv(name: string, fallback: number, minimum: number) {
@@ -71,12 +149,12 @@ export async function runCollector(source: EventSource, collect: Collector) {
   let eventsSeen = 0;
   let eventsWritten = 0;
   try {
-    const events = validateEvents(await collect());
+    const events = validateEvents(source, await collect());
     eventsSeen = events.length;
     if (dryRun) {
       console.info(JSON.stringify({ source, dryRun: true, count: events.length, sample: events.slice(0, 3) }, null, 2));
     } else {
-      eventsWritten = await upsertEvents(source, events);
+      eventsWritten = (await upsertEvents(source, events)).written;
       await finishSync(syncId!, { status: "succeeded", eventsSeen, eventsWritten });
       await refreshSourceEventCount(source);
     }
@@ -108,7 +186,7 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
     const enabledDefinitions = effectiveDefinitions.filter((region) => region.enabled);
     let eventsSeen = 0;
     for (const definition of enabledDefinitions) {
-      const events = validateEvents(await collect(definition));
+      const events = validateEvents(source, await collect(definition));
       eventsSeen += events.length;
       console.info(JSON.stringify({
         source,
@@ -129,6 +207,7 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
   let regionsProcessed = 0;
   let eventsSeen = 0;
   let eventsWritten = 0;
+  let eventsSkipped = 0;
   let eventsWithdrawn = 0;
 
   try {
@@ -146,12 +225,15 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       let syncId: string | null = null;
       let regionEventsSeen = 0;
       let regionEventsWritten = 0;
+      let regionEventsSkipped = 0;
       let regionEventsWithdrawn = 0;
       try {
         syncId = await beginSync(source, claimed);
-        const events = validateEvents(await collect(definition));
+        const events = validateEvents(source, await collect(definition));
         regionEventsSeen = events.length;
-        regionEventsWritten = await upsertEvents(source, events, { collectionRegionId: claimed.id });
+        const written = await upsertEvents(source, events, { collectionRegionId: claimed.id });
+        regionEventsWritten = written.written;
+        regionEventsSkipped = written.skipped;
         // Only after the region's own collection succeeded, so an upstream
         // failure can never withdraw the events it failed to fetch.
         regionEventsWithdrawn = await withdrawMissingEvents(
@@ -184,6 +266,7 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       regionsProcessed += 1;
       eventsSeen += regionEventsSeen;
       eventsWritten += regionEventsWritten;
+      eventsSkipped += regionEventsSkipped;
       eventsWithdrawn += regionEventsWithdrawn;
     }
 
@@ -208,5 +291,5 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
   }
 
   if (failures.length) throw new AggregateError(failures, `${source} failed in ${failures.length} collection region(s)`);
-  return { regionsProcessed, eventsSeen, eventsWritten, eventsWithdrawn, dryRun: false };
+  return { regionsProcessed, eventsSeen, eventsWritten, eventsSkipped, eventsWithdrawn, dryRun: false };
 }

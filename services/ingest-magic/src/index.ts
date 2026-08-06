@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
+import { normalizeAll, runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeMagicEvent, type WotcEvent } from "./normalize.js";
 
 const ENDPOINT = "https://api.tabletop.wizards.com/silverbeak-griffin-service/graphql";
@@ -88,8 +88,13 @@ export async function collectMagicRegion(center: SearchCenter): Promise<Normaliz
   let page = 0;
   while (page < 20) {
     const result = await search(center, page);
-    for (const event of result.events) {
-      const normalized = normalizeMagicEvent(event);
+    const normalizedPage = normalizeAll(
+      "wotc-locator",
+      result.events,
+      normalizeMagicEvent,
+      (event) => String(event.id),
+    );
+    for (const normalized of normalizedPage) {
       const startsAt = new Date(normalized.startsAt).getTime();
       if (startsAt >= Date.now() - 43_200_000 && startsAt <= cutoff) unique.set(normalized.sourceEventId, normalized);
     }

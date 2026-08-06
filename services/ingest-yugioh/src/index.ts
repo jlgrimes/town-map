@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from "@town-map/contracts";
-import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
+import { normalizeAll, runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeYugiohEvent, type KonamiTournament } from "./normalize.js";
 
 const ENDPOINT = "https://cardgame-network.konami.net/mt/user/rest/tournament/US/tournament_gsearch";
@@ -72,10 +72,12 @@ async function searchState(stateCode: string): Promise<KonamiTournament[]> {
 export async function collectYugiohRegion(state: string): Promise<NormalizedEvent[]> {
   const unique = new Map<string, NormalizedEvent>();
   const results = await searchState(state);
-  for (const event of results) {
-    if (/MASTER DUEL|DUEL LINKS|Legacy of the Duelist/i.test(`${event.eventName ?? ""} ${event.tournamentName}`)) continue;
-    if (event.tournamentStatus === "TOURNAMENT_FINISH" || event.tournamentDate < Date.now() - 7_200_000) continue;
-    unique.set(event.tournamentNo, normalizeYugiohEvent(event));
+  const wanted = results.filter((event) => {
+    if (/MASTER DUEL|DUEL LINKS|Legacy of the Duelist/i.test(`${event.eventName ?? ""} ${event.tournamentName}`)) return false;
+    return event.tournamentStatus !== "TOURNAMENT_FINISH" && event.tournamentDate >= Date.now() - 7_200_000;
+  });
+  for (const event of normalizeAll("konami-kcgn", wanted, normalizeYugiohEvent, (row) => row.tournamentNo)) {
+    unique.set(event.sourceEventId, event);
   }
   return [...unique.values()];
 }

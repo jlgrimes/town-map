@@ -57,7 +57,50 @@ export const VenueSchema = z.object({
 });
 export type NormalizedVenue = z.infer<typeof VenueSchema>;
 
-export const NormalizedEventSchema = z.object({
+/**
+ * Largest value PostgreSQL's `integer` and `numeric(10, 2)` accept, which is
+ * what `events.capacity` and `events.price_amount` are declared as. A source
+ * publishing something larger is publishing a sentinel or a bug, not a fact
+ * about the event.
+ */
+const MAX_CAPACITY = 2_147_483_647;
+const MAX_PRICE_AMOUNT = 99_999_999.99;
+
+const NUL_PATTERN = /\u0000/g;
+
+/**
+ * Removes NUL, which PostgreSQL rejects in `text` and in `jsonb` alike.
+ *
+ * No source means to publish one; it arrives inside free text as an artefact of
+ * whatever produced the upstream record. Stripped here rather than at the write
+ * because `raw` is stored verbatim and carries the same hazard as the columns,
+ * and because one such character in one event used to fail the whole batch.
+ */
+function withoutNulCharacters<T>(value: T): T {
+  if (typeof value === "string") return value.replace(NUL_PATTERN, "") as T;
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(withoutNulCharacters) as T;
+  // Anything exotic is left alone rather than rebuilt as a plain object.
+  if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      withoutNulCharacters(key),
+      withoutNulCharacters(entry),
+    ]),
+  ) as T;
+}
+
+/**
+ * An event as a collector produces it.
+ *
+ * Two kinds of field, treated differently on purpose. What identifies an
+ * occurrence -- its id, title and start -- is validated strictly, and an event
+ * missing any of it is not an event worth storing. Everything descriptive falls
+ * back to null when a source publishes something unusable, because losing a
+ * capacity is a better outcome than losing the event, and, since these are
+ * written in batches, better than losing the events collected alongside it.
+ */
+const NormalizedEventShape = z.object({
   sourceEventId: z.string(),
   /**
    * Identifier for the recurring series this occurrence belongs to, when the
@@ -77,13 +120,17 @@ export const NormalizedEventSchema = z.object({
   eventType: z.string().nullable().default(null),
   sourceUrl: z.string().nullable().default(null),
   registrationUrl: z.string().nullable().default(null),
-  priceAmount: z.number().nullable().default(null),
+  // Bounded by the column rather than by anything about events: a price or a
+  // headcount too large to store is dropped so the event survives the write.
+  priceAmount: z.number().min(0).max(MAX_PRICE_AMOUNT).nullable().default(null).catch(null),
   priceCurrency: z.string().nullable().default(null),
-  capacity: z.number().int().nullable().default(null),
+  capacity: z.number().int().min(0).max(MAX_CAPACITY).nullable().default(null).catch(null),
   isOnline: z.boolean().default(false),
   venue: VenueSchema.nullable().default(null),
   raw: z.unknown(),
 });
+
+export const NormalizedEventSchema = NormalizedEventShape.transform(withoutNulCharacters);
 export type NormalizedEvent = z.infer<typeof NormalizedEventSchema>;
 
 /**
