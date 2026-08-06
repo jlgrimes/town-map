@@ -150,6 +150,36 @@ integration("recurring event series", () => {
     expect(await seriesRows()).toHaveLength(1);
   });
 
+  it.each([[""], ["Eastern Standard Time"]])(
+    "falls back to UTC for a time zone PostgreSQL cannot interpret: %j",
+    async (timezone) => {
+      // 19:00 Chicago on Friday is 01:00 UTC on Saturday, so the fallback is
+      // visible in the schedule rather than silently agreeing with the zone.
+      await upsertEvents("wotc-locator", [event("fnm-0", fridayEvening(0), { timezone })]);
+
+      await expect(assignEventSeries("wotc-locator")).resolves.toEqual({ assigned: 1 });
+
+      const [series] = await seriesRows();
+      expect(series.weekday).toBe(6);
+      expect(series.localStartMinute).toBe(60);
+    },
+  );
+
+  it("groups the rest of a source when one occurrence has an unusable time zone", async () => {
+    // The pass runs in one transaction, so a value that raises rather than
+    // resolving used to abort the grouping of every other occurrence too, and
+    // did so again on every later run because the row stayed unassigned.
+    await upsertEvents("wotc-locator", [
+      ...[0, 1, 2].map((week) => event(`fnm-${week}`, fridayEvening(week))),
+      event("blank-zone", fridayEvening(0), { timezone: "", venue: venue("venue-2") }),
+    ]);
+
+    await expect(assignEventSeries("wotc-locator")).resolves.toEqual({ assigned: 4 });
+
+    expect(await seriesIdFor("fnm-0")).not.toBeNull();
+    expect(await seriesIdFor("blank-zone")).not.toBeNull();
+  });
+
   it("keeps a different weekday, format or venue apart", async () => {
     await upsertEvents("wotc-locator", [
       event("friday", fridayEvening(0)),

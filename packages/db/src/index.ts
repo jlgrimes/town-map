@@ -249,9 +249,15 @@ function coverageStatus(region: CoverageRegionRow, now: Date): CoverageRegionSta
  * A UTC weekday and time shift by an hour across daylight saving, which would
  * split a weekly series in two every spring and autumn. `timezone` is retained
  * per event for exactly this; UTC is only the fallback when a source gives none.
+ *
+ * The zone comes from `pending_series_timezones` rather than from `e.timezone`
+ * directly. `timezone` is text a source supplied, and `AT TIME ZONE` raises on
+ * anything it cannot interpret, so reading the column here made one unusable
+ * value abort the grouping of every occurrence of that source. Every statement
+ * using this fragment must join that table as `z`.
  */
 const LOCAL_SCHEDULE_SQL = `
-  (e.starts_at AT TIME ZONE COALESCE(e.timezone, 'UTC'))`;
+  (e.starts_at AT TIME ZONE COALESCE(z.name, 'UTC'))`;
 
 /**
  * The deterministic key grouping occurrences into a series.
@@ -451,19 +457,41 @@ async function assignEventSeriesWithin(source: EventSource, database: Queryable)
 }
 
 async function stageAndAssign(source: EventSource, database: Queryable) {
-  // 1. Key the occurrences that do not have a series yet. Withdrawn events are
+  // 1a. Resolve the zone strings before anything dereferences them. Sources
+  // publish `timezone` as free text and a value PostgreSQL cannot interpret --
+  // a blank string, a Windows display name -- raises rather than returning
+  // null, which would abort the whole pass. Resolved once per distinct value
+  // instead of once per row, and unusable ones become null so the schedule
+  // falls back to UTC exactly as it does for a source that supplies no zone.
+  await database.query(
+    `CREATE TEMP TABLE pending_series_timezones ON COMMIT DROP AS
+     SELECT candidate.timezone, resolved_timezone(candidate.timezone) AS name
+     FROM (
+       SELECT DISTINCT e.timezone
+       FROM events e
+       WHERE e.source = $1
+         AND e.series_id IS NULL
+         AND e.withdrawn_at IS NULL
+     ) AS candidate`,
+    [source],
+  );
+
+  // 1b. Key the occurrences that do not have a series yet. Withdrawn events are
   // skipped: a cancelled week says nothing about the schedule.
   await database.query(
     `CREATE TEMP TABLE pending_series_keys ON COMMIT DROP AS
      SELECT e.id AS event_id,
        ${SERIES_KEY_SQL} AS key,
        e.game, e.venue_id, e.title, e.format,
-       COALESCE(e.timezone, 'UTC') AS timezone,
+       COALESCE(z.name, 'UTC') AS timezone,
        EXTRACT(dow FROM ${LOCAL_SCHEDULE_SQL})::int AS weekday,
        (EXTRACT(hour FROM ${LOCAL_SCHEDULE_SQL})::int * 60
         + EXTRACT(minute FROM ${LOCAL_SCHEDULE_SQL})::int) AS local_start_minute,
        e.starts_at
      FROM events e
+     -- Null zones have no row on the left of this join and null never matches
+     -- itself, so the comparison has to treat two nulls as equal.
+     LEFT JOIN pending_series_timezones z ON z.timezone IS NOT DISTINCT FROM e.timezone
      WHERE e.source = $1
        AND e.series_id IS NULL
        AND e.withdrawn_at IS NULL

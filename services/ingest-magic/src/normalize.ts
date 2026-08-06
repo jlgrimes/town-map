@@ -24,6 +24,27 @@ export type WotcEvent = {
   } | null;
 };
 
+/**
+ * Keeps the published zone only when it is one a consumer can act on.
+ *
+ * The locator publishes `timeZone` as free text and sends blanks, so storing it
+ * verbatim put values into `events.timezone` that nothing downstream could
+ * interpret. Null is the honest alternative: it is what a source with no zone
+ * to offer already writes, and callers already fall back to UTC for it.
+ */
+function normalizeTimezone(value?: string | null) {
+  const candidate = value?.trim();
+  if (!candidate) return null;
+  try {
+    // Asking the runtime is the check that matters: an IANA name is accepted,
+    // anything it cannot resolve to a zone throws RangeError.
+    new Intl.DateTimeFormat("en-US", { timeZone: candidate });
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeUrl(value?: string | null) {
   if (!value?.trim()) return null;
   const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
@@ -43,7 +64,7 @@ export function normalizeMagicEvent(event: WotcEvent): NormalizedEvent {
     description: event.description ?? null,
     startsAt: new Date(event.scheduledStartTime).toISOString(),
     endsAt: null,
-    timezone: event.timeZone ?? null,
+    timezone: normalizeTimezone(event.timeZone),
     status: event.status ?? null,
     format: event.eventFormat?.name ?? event.eventFormat?.id ?? null,
     eventType: event.tags?.find((tag) => !tag.startsWith("magic:")) ?? null,

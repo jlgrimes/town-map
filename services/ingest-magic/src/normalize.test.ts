@@ -14,4 +14,21 @@ describe("normalizeMagicEvent", () => {
     expect(event.sourceUrl).toBe("https://locator.wizards.com/event/evt-1");
     expect(event.priceAmount).toBe(5);
   });
+
+  it.each([
+    ["America/Chicago", "America/Chicago"],
+    ["  America/Chicago  ", "America/Chicago"],
+    ["", null],
+    ["   ", null],
+    ["Eastern Standard Time", null],
+    [undefined, null],
+  ])("resolves the published time zone %j to %j", (published, expected) => {
+    const event = normalizeMagicEvent({
+      id: "evt-1",
+      title: "Friday Night Magic",
+      scheduledStartTime: "2026-08-01T00:00:00Z",
+      timeZone: published,
+    });
+    expect(event.timezone).toBe(expected);
+  });
 });
