@@ -67,7 +67,9 @@ The Pokémon service uses Pokedata's structured CSV export for upcoming TCG Cups
 
 Magic's search circles are a checked-in catalog in `services/ingest-magic/src/centers.ts` rather than an environment variable, so a change to where Town Map claims coverage arrives as a diff. `MAGIC_SEARCH_CENTERS_JSON` still overrides it for a one-off run and is validated on the way in. New centers are registered disabled; activate a cohort with `COLLECTOR_REGION_ALLOWLIST` after measuring its yield in dry run.
 
-A circle holding more events than the collector's page ceiling can read returns a partial result, which is stored but never withdrawn against — a truncated read is indistinguishable from events cancelled upstream, and withdrawing on one retires a metro's late calendar every run. The warning it logs names the circle to split or narrow.
+Yu-Gi-Oh! works the same way one level up: `services/ingest-yugioh/src/states.ts` holds every state and the District of Columbia, tiered by population and registered disabled apart from the collecting cohort. `YUGIOH_STATES` overrides it and rejects a code the endpoint cannot filter on, which previously registered a region that collected nothing and reported success.
+
+A region holding more events than one collection can read returns a partial result, which is stored but never withdrawn against — a truncated read is indistinguishable from events cancelled upstream, and withdrawing on one retires a region's late calendar every run. The warning it logs names the region to split or narrow.
 
 ## Capacitor
 

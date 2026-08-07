@@ -14,7 +14,7 @@
 
 The existing production defaults stay intentionally small. Catalog growth and activation are separate operations: regions may be registered as disabled so coverage can be reviewed before any upstream request is made.
 
-Magic's catalog is `services/ingest-magic/src/centers.ts`, tiered by metropolitan area and ordered by rollout priority. A national catalog is too large to review as an environment variable, and the file makes a coverage change a reviewable diff. Circles may overlap: events deduplicate on `(source, source_event_id)` and withdrawal is scoped to the region that wrote a row last, so overlap costs repeated requests rather than correctness.
+Magic's catalog is `services/ingest-magic/src/centers.ts` and Yu-Gi-Oh!'s is `services/ingest-yugioh/src/states.ts`, tiered by metropolitan area and by state population respectively, and ordered by rollout priority. A national catalog is too large to review as an environment variable, and the file makes a coverage change a reviewable diff. Circles may overlap: events deduplicate on `(source, source_event_id)` and withdrawal is scoped to the region that wrote a row last, so overlap costs repeated requests rather than correctness.
 
 Circle sizing is bounded by requests, not by driving distance. One circle reads at most 20 pages of 200 events, and a circle holding more than that returns a partial result — stored, but never withdrawn against, because a truncated read looks exactly like a set of events cancelled upstream. Dense metros are therefore split into several small circles rather than covered by one wide one. Growing the catalog also needs `COLLECTOR_JOB_LIMIT` raised to at least the number of regions due per hour, since the hourly container stops once it hits that limit.
 
