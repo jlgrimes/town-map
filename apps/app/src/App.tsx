@@ -21,14 +21,6 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
@@ -52,7 +44,6 @@ import { recurrenceLabel, type EventListItem, type Game } from "@town-map/contra
 import {
   Bookmark,
   BookmarkCheck,
-  ChevronDown,
   ChevronsUpDown,
   CircleAlert,
   Compass,
@@ -106,14 +97,6 @@ import {
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
 const PAGE_SIZE = 24;
-
-/**
- * How long typing has to settle before a search reaches the API. Text search
- * used to filter events already in memory, so it cost nothing per keystroke;
- * now that it is a query, this keeps a typed word to one round trip instead of
- * one per character.
- */
-const SEARCH_DEBOUNCE_MS = 250;
 
 type ViewMode = "list" | "map";
 type Tab = "my-events" | "discover" | "preferences";
@@ -174,7 +157,6 @@ function initialTab(authEnabled: boolean): Tab {
   if (!authEnabled) return "discover";
   if (value === "discover" || value === "my-events") return value;
   const hasDiscoveryParams =
-    initialParams.has("q") ||
     initialParams.has("games") ||
     initialParams.has("date") ||
     initialParams.has("place") ||
@@ -431,7 +413,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   // True when the area holds more events than one query will gather, so the map
   // is showing a subset rather than everything nearby.
   const [resultsTruncated, setResultsTruncated] = useState(false);
-  const [query, setQuery] = useState(initialParams.get("q") ?? "");
   const [dateFilter, setDateFilter] = useState<DateFilter>(initialDateFilter);
   const [viewMode, setViewMode] = useState<ViewMode>(initialParams.get("view") === "map" ? "map" : "list");
   const [location, setLocation] = useState({
@@ -453,7 +434,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
   const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "locating">("idle");
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
-  const [locationEditorOpen, setLocationEditorOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -637,22 +617,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     return () => controller.abort();
   }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, preferencesReloadKey]);
 
-  // Trails `query` by one debounce interval. The input stays fully controlled by
-  // `query` so typing never lags; this is only what the request is keyed on.
-  const [searchTerm, setSearchTerm] = useState(query.trim());
-
-  useEffect(() => {
-    const trimmed = query.trim();
-    // Clearing the box should restore the unfiltered list immediately — there is
-    // no half-typed word to wait out.
-    if (!trimmed) {
-      setSearchTerm("");
-      return;
-    }
-    const timer = setTimeout(() => setSearchTerm(trimmed), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [query]);
-
   useEffect(() => {
     if ((auth.enabled && (!auth.loaded || (auth.signedIn && !preferencesReady))) || locationStatus === "searching") {
       setStatus("loading");
@@ -661,7 +625,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     const controller = new AbortController();
     setStatus("loading");
     const gamesToFetch = selectedGames.length === 0 ? catalog.ids : selectedGames;
-    fetchEvents({ games: gamesToFetch, query: searchTerm, ...location, radiusMiles, signal: controller.signal })
+    fetchEvents({ games: gamesToFetch, ...location, radiusMiles, signal: controller.signal })
       .then(({ events: nextEvents, truncated }) => {
         setEvents(nextEvents);
         setResultsTruncated(truncated);
@@ -679,12 +643,11 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
         }
       });
     return () => controller.abort();
-  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, searchTerm, location, radiusMiles, locationStatus, preferencesReady, reloadKey, catalog.ids]);
+  }, [auth.enabled, auth.loaded, auth.signedIn, selectedGames, location, radiusMiles, locationStatus, preferencesReady, reloadKey, catalog.ids]);
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (selectedGames.length > 0) params.set("games", selectedGames.join(","));
-    if (query) params.set("q", query);
     if (dateFilter !== "all") params.set("date", dateFilter);
     if (priceFilter !== "all") params.set("price", priceFilter);
     if (viewMode !== "list") params.set("view", viewMode);
@@ -694,19 +657,16 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     params.set("place", locationLabel);
     const nextUrl = `${window.location.pathname}?${params}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [dateFilter, location, locationLabel, priceFilter, query, radiusMiles, selectedGames, viewMode]);
+  }, [dateFilter, location, locationLabel, priceFilter, radiusMiles, selectedGames, viewMode]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
     setSelectedEventId(null);
     setHighlightedEventId(null);
-    // Keyed on the debounced term, not the raw input: the list a selection
-    // refers to only changes when a request has actually been made for it.
-  }, [dateFilter, priceFilter, searchTerm, radiusMiles, selectedGames]);
+  }, [dateFilter, priceFilter, radiusMiles, selectedGames]);
 
-  // The text query is applied by the API, against every event in range rather
-  // than only the pages gathered here. What is left to do locally is the date
-  // and price filters, which are derived from data already on screen.
+  // The date and price filters are derived from data already on screen; the
+  // location and radius are what the API request itself is scoped to.
   const visibleEvents = useMemo(() => {
     const filtered = events.filter((event) =>
       (selectedGames.length === 0 || selectedGames.includes(event.game)) &&
@@ -752,7 +712,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
       setPlaceQuery(normalized);
-      setLocationEditorOpen(false);
     } catch {
       setLocationNotice("Place search is temporarily unavailable. You can still use your current location.");
     } finally {
@@ -773,7 +732,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       setLocationLabel("Current location");
       setPlaceQuery("Current location");
-      setLocationEditorOpen(false);
     } catch {
       setLocationNotice("We could not access your location. Enter a city or ZIP code instead.");
     } finally {
@@ -807,7 +765,6 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
       setPlaceQuery(homeAddress);
-      setLocationEditorOpen(false);
     } catch {
       setLocationNotice("We couldn't locate your home address right now.");
     } finally {
@@ -897,9 +854,9 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
     onClick: () => setReloadKey((value) => value + 1),
   } : {
     title: "No matching events",
-    description: `Try a wider distance, another date, or fewer search terms near ${locationLabel}.`,
+    description: `Try a wider distance or another date near ${locationLabel}.`,
     action: "Clear filters",
-    onClick: () => { setQuery(""); setDateFilter("all"); setSelectedGames(catalog.ids); },
+    onClick: () => { setDateFilter("all"); setSelectedGames(catalog.ids); },
   };
 
   return (
@@ -1028,81 +985,12 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
               </div>
             )}
 
-            <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4 lg:px-6">
-              <div className="flex items-center gap-3">
-                <SidebarTrigger />
-                <Separator orientation="vertical" className="h-4" />
-                <Typography variant="h2" as="h1">
-                  {tab === "my-events" ? "My events" : tab === "preferences" ? "Preferences" : "Discover"}
-                </Typography>
-              </div>
-              {tab === "discover" && auth.loaded && (
-                <div className="flex items-center gap-2">
-                  <Popover
-                    open={locationEditorOpen}
-                    onOpenChange={(open) => {
-                      setLocationEditorOpen(open);
-                      if (open) {
-                        setPlaceQuery(locationLabel === "Current location" ? "" : locationLabel);
-                      }
-                    }}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-9 gap-2 font-normal">
-                        <MapPin className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate max-w-40 sm:max-w-xs">{locationLabel}</span>
-                        <ChevronDown className="size-3.5 shrink-0 opacity-60" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
-                      <PopoverHeader>
-                        <PopoverTitle>Search location</PopoverTitle>
-                        <PopoverDescription>Choose where to look for nearby events.</PopoverDescription>
-                      </PopoverHeader>
-                      <form onSubmit={searchPlace} className="space-y-3">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="place-search">City, state, or ZIP code</Label>
-                          <Input
-                            id="place-search"
-                            value={placeQuery}
-                            onChange={(event) => setPlaceQuery(event.target.value)}
-                            placeholder="Chicago, IL"
-                            autoComplete="postal-code"
-                            className="h-11"
-                            autoFocus
-                          />
-                        </div>
-                        {locationNotice && (
-                          <p role="status" className="flex items-start gap-1 text-xs text-destructive">
-                            <CircleAlert className="mt-0.5 size-3.5 shrink-0" />{locationNotice}
-                          </p>
-                        )}
-                        <div className="flex gap-2">
-                          <Button type="submit" className="min-h-11 flex-1" disabled={!placeQuery.trim() || locationStatus === "searching"}>
-                            {locationStatus === "searching" ? "Searching…" : "Search"}
-                          </Button>
-                          <Button type="button" variant="outline" size="icon" className="size-11" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
-                            <LocateFixed />
-                          </Button>
-                        </div>
-                        {auth.signedIn && homeAddress && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="w-full text-xs text-muted-foreground hover:text-foreground mt-1 justify-start px-1"
-                            onClick={resetToSavedHome}
-                            disabled={locationStatus === "searching"}
-                          >
-                            <Home className="mr-1.5 size-3.5" />
-                            Use saved home ({homeAddress})
-                          </Button>
-                        )}
-                      </form>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              )}
+            <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4 lg:px-6">
+              <SidebarTrigger />
+              <Separator orientation="vertical" className="h-4" />
+              <Typography variant="h2" as="h1">
+                {tab === "my-events" ? "My events" : tab === "preferences" ? "Preferences" : "Discover"}
+              </Typography>
             </header>
 
             <main id="main-content" className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-3 sm:px-6 lg:px-8">
@@ -1284,19 +1172,42 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                 <>
                   <section aria-label="Location and event filters" className="shrink-0 border-b pb-3">
                     <SpotlightSearch className="w-full">
-                      <div className="relative">
-                        <Label className="sr-only" htmlFor="event-search">Search events or venues</Label>
-                        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground z-20" />
-                        <Input
-                          id="event-search"
-                          value={query}
-                          onChange={(event) => setQuery(event.target.value)}
-                          placeholder="Search events or venues"
-                          className="h-11 pr-11 pl-10"
-                        />
-                        {query && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear search" onClick={() => setQuery("")}><X /></Button>}
-                      </div>
+                      <form onSubmit={searchPlace} className="flex flex-wrap items-center gap-2">
+                        <div className="relative min-w-0 flex-1">
+                          <Label className="sr-only" htmlFor="place-search">City, state, or ZIP code</Label>
+                          <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground z-20" />
+                          <Input
+                            id="place-search"
+                            value={placeQuery}
+                            onChange={(event) => setPlaceQuery(event.target.value)}
+                            placeholder="Search by city, state, or ZIP code"
+                            autoComplete="postal-code"
+                            className="h-11 pr-11 pl-10"
+                          />
+                          {placeQuery && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear location" onClick={() => setPlaceQuery("")}><X /></Button>}
+                        </div>
+                        <Button type="submit" className="h-11 shrink-0" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+                          {locationStatus === "searching" ? "Searching…" : "Search"}
+                        </Button>
+                        <Button type="button" variant="outline" size="icon" className="size-11 shrink-0" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
+                          <LocateFixed />
+                        </Button>
+                      </form>
                     </SpotlightSearch>
+
+                    {auth.signedIn && homeAddress && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="mt-1.5 h-7 px-1 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={resetToSavedHome}
+                        disabled={locationStatus === "searching"}
+                      >
+                        <Home className="mr-1.5 size-3.5" />
+                        Use saved home ({homeAddress})
+                      </Button>
+                    )}
 
                     <FilterBar
                       className="mt-2"

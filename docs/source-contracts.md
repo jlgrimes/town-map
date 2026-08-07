@@ -16,6 +16,7 @@ These endpoints are public interfaces used by official event locators, but they 
 - Endpoint: `https://cardgame-network.konami.net/mt/user/rest/tournament/US/tournament_gsearch`
 - Stable source keys: `tournamentNo`; `storeCode`
 - Current strategy: search each configured state over a rolling 90-day window
+- Pagination: the endpoint silently caps each response to a fixed page size regardless of the requested `indexCount`, so a state busy enough to exceed one page is read across multiple requests, indexed by rows already read, until a page comes back short of the endpoint's own reported count
 - Exclusions: finished events and digital-only Master Duel, Duel Links, or Legacy of the Duelist events
 - Failure policy: isolate failures to the affected state region so other due states can complete; retain previously stored records
 

@@ -44,13 +44,42 @@ describe("collectYugiohRegion", () => {
   // complete would retire every tournament the endpoint held back.
   it("reports a state the endpoint truncated as incomplete", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    stubKcgn({ result: [tournament()], count: 12_000 });
+    // A page full every time, so the loop keeps paging until it hits the
+    // collector's own safety ceiling rather than the (much larger) count
+    // the endpoint reports -- the real-world shape of a state busy enough
+    // to never run out of pages.
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ count: 50_000, result: Array.from({ length: 2_500 }, () => tournament()) }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
 
     const result = await collectYugiohRegion("CA");
 
     expect(result.complete).toBe(false);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("CA holds 12000 tournament(s)"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("CA holds 50000 tournament(s)"));
+    expect(fetchMock).toHaveBeenCalledTimes(4); // 10_000 (MAX_RESULTS) / 2_500 per page
     warn.mockRestore();
+  });
+
+  it("pages past the endpoint's fixed page size to read a state's later events", async () => {
+    // The endpoint caps each response to a fixed page size regardless of
+    // indexCount, so a state with more upcoming tournaments than fit on one
+    // page needs a second request to see the rest.
+    const pageOne = Array.from({ length: 3 }, (_, i) => tournament({ tournamentNo: `p1-${i}` }));
+    const pageTwo = [tournament({ tournamentNo: "p2-0" })];
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 4, result: pageOne }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 4, result: pageTwo }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await collectYugiohRegion("CA");
+
+    expect(result.complete).toBe(true);
+    expect(result.events.map((event) => event.sourceEventId)).toEqual(["p1-0", "p1-1", "p1-2", "p2-0"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse((fetchMock.mock.calls[1] as unknown as [string, { body: string }])[1].body);
+    expect(secondBody.indexStart).toBe(3);
   });
 
   // Filtering is not truncation: what is left is still all the region should
