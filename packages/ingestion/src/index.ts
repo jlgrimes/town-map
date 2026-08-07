@@ -19,9 +19,26 @@ export type Collector = () => Promise<NormalizedEvent[]>;
 export type RegionalCollectionDefinition<TConfig extends Record<string, unknown>> =
   Omit<CollectionRegionDefinition, "config"> & { config: TConfig };
 
+/**
+ * A region's events, and whether they are all of them.
+ *
+ * `complete` is what entitles a run to withdraw: withdrawal is a set
+ * comparison, so it reads anything a collector did not return as gone from
+ * upstream. A collector that stopped early -- a page ceiling, a budget, a
+ * partial upstream response -- returns events that look identical to a
+ * complete set and are not one, and withdrawing against it retires events that
+ * are still scheduled. Returning a bare array means complete, which is true of
+ * a collector that enumerates its region in one pass.
+ */
+export type CollectedEvents = { events: NormalizedEvent[]; complete: boolean };
+
 export type RegionalCollector<TConfig extends Record<string, unknown>> = (
   region: RegionalCollectionDefinition<TConfig>,
-) => Promise<NormalizedEvent[]>;
+) => Promise<NormalizedEvent[] | CollectedEvents>;
+
+function asCollected(result: NormalizedEvent[] | CollectedEvents): CollectedEvents {
+  return Array.isArray(result) ? { events: result, complete: true } : result;
+}
 
 /**
  * How much of a batch may be discarded before the run is treated as a broken
@@ -186,12 +203,14 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
     const enabledDefinitions = effectiveDefinitions.filter((region) => region.enabled);
     let eventsSeen = 0;
     for (const definition of enabledDefinitions) {
-      const events = validateEvents(source, await collect(definition));
+      const collected = asCollected(await collect(definition));
+      const events = validateEvents(source, collected.events);
       eventsSeen += events.length;
       console.info(JSON.stringify({
         source,
         region: definition.key,
         dryRun: true,
+        complete: collected.complete,
         count: events.length,
         sample: events.slice(0, 3),
       }, null, 2));
@@ -229,17 +248,26 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       let regionEventsWithdrawn = 0;
       try {
         syncId = await beginSync(source, claimed);
-        const events = validateEvents(source, await collect(definition));
+        const collected = asCollected(await collect(definition));
+        const events = validateEvents(source, collected.events);
         regionEventsSeen = events.length;
         const written = await upsertEvents(source, events, { collectionRegionId: claimed.id });
         regionEventsWritten = written.written;
         regionEventsSkipped = written.skipped;
         // Only after the region's own collection succeeded, so an upstream
-        // failure can never withdraw the events it failed to fetch.
-        regionEventsWithdrawn = await withdrawMissingEvents(
-          claimed.id,
-          events.map((event) => event.sourceEventId),
-        );
+        // failure can never withdraw the events it failed to fetch, and only
+        // for a region that returned all of its events, so one that stopped
+        // short cannot retire the remainder it never asked for.
+        if (collected.complete) {
+          regionEventsWithdrawn = await withdrawMissingEvents(
+            claimed.id,
+            events.map((event) => event.sourceEventId),
+          );
+        } else {
+          console.warn(
+            `${source}: ${claimed.key} returned a partial result, so its ${events.length} event(s) were stored without withdrawing anything`,
+          );
+        }
         await finishSync(syncId, {
           status: "succeeded",
           eventsSeen: regionEventsSeen,
