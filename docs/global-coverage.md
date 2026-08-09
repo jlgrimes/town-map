@@ -10,13 +10,17 @@
 | Yu-Gi-Oh! | KONAMI Card Game Network | State search through the US endpoint | Other countries require verified country-specific endpoints or an official feed |
 | Pokémon | Pokedata event export | Worldwide or country-filtered competitive TCG export | Third-party data is not authoritative and excludes unsupported event categories |
 | One Piece | Bandai TCG+ | Country and subdivision regions | Production automation needs written Bandai authorization; high event volume requires bounded regional paging |
-| Riftbound | Official Riftbound locator | Coordinate-and-radius search regions | Production automation needs written UVS/Riot authorization; worldwide coverage requires a bounded center catalog |
+| Riftbound | Official Riftbound locator | Coordinate-and-radius search regions | Production automation needs written UVS/Riot authorization; the checked-in catalog covers the United States, and coverage beyond it still requires a bounded center catalog |
 
 The existing production defaults stay intentionally small. Catalog growth and activation are separate operations: regions may be registered as disabled so coverage can be reviewed before any upstream request is made.
 
-Magic's catalog is `services/ingest-magic/src/centers.ts` and Yu-Gi-Oh!'s is `services/ingest-yugioh/src/states.ts`, tiered by metropolitan area and by state population respectively, and ordered by rollout priority. A national catalog is too large to review as an environment variable, and the file makes a coverage change a reviewable diff. Circles may overlap: events deduplicate on `(source, source_event_id)` and withdrawal is scoped to the region that wrote a row last, so overlap costs repeated requests rather than correctness.
+Magic's catalog is `services/ingest-magic/src/centers.ts`, Yu-Gi-Oh!'s is `services/ingest-yugioh/src/states.ts`, and Riftbound's is `services/ingest-riftbound/src/centers.ts` — tiered by metropolitan area, by state population, and by metropolitan area again, and ordered by rollout priority. A national catalog is too large to review as an environment variable, and the file makes a coverage change a reviewable diff. Circles may overlap: events deduplicate on `(source, source_event_id)` and withdrawal is scoped to the region that wrote a row last, so overlap costs repeated requests rather than correctness.
 
-Circle sizing is bounded by requests, not by driving distance. One circle reads at most 20 pages of 200 events, and a circle holding more than that returns a partial result — stored, but never withdrawn against, because a truncated read looks exactly like a set of events cancelled upstream. Dense metros are therefore split into several small circles rather than covered by one wide one. Growing the catalog also needs `COLLECTOR_JOB_LIMIT` raised to at least the number of regions due per hour, since the hourly container stops once it hits that limit.
+Circle sizing is bounded by requests, not by driving distance. One circle reads at most 20 pages — 200 events per page for Magic, 250 for Riftbound — and a circle holding more than that returns a partial result — stored, but never withdrawn against, because a truncated read looks exactly like a set of events cancelled upstream. Dense metros are therefore split into several small circles rather than covered by one wide one.
+
+The two circle catalogs are sized to different densities, which is why Riftbound's radii are larger for the same cities. Magic's is a metropolitan catalog: covering the country between its metros at Magic's event density would need circles that exceed the page ceiling. Riftbound's is national, because a source this new leaves the fill circles far under that ceiling, and a national map whose coverage stops at the last metro answers a rural search with an empty result rather than an explanation. `services/ingest-riftbound/src/centers.test.ts` asserts that coverage directly: every state's largest city and a set of towns far from any metro fall inside some circle.
+
+Growing either catalog also needs `COLLECTOR_JOB_LIMIT` raised to at least the number of regions due per hour, since the hourly container stops once it hits that limit. At the default six-hour cadence, the full Riftbound catalog is about 100 regions, or roughly 17 due per hour.
 
 ## Rollout controls
 
@@ -60,8 +64,9 @@ Suggested initial thresholds are at least 99% successful regional runs, no regio
 1. Observe the existing Chicago Magic/Riftbound, Illinois Yu-Gi-Oh!/One Piece, and Pokémon regions through `/v1/coverage`.
 2. Build a disabled Magic metropolitan catalog, deduplicating overlapping results by the existing source event ID.
 3. Activate five Magic metros with the allowlist and measure event yield per request for one week.
-4. Expand Yu-Gi-Oh! across US states in small priority cohorts; investigate official non-US interfaces separately.
-5. Compare country-filtered Pokémon exports with the worldwide export before deciding whether country partitioning improves reliability.
-6. Secure written permission before enabling the Bandai TCG+ and Riftbound collectors in production.
-7. Add first-party or partner feeds where locator interfaces cannot provide defensible coverage.
-8. Publish user-facing coverage language based on measured regions and source categories, never an unqualified “all events” claim.
+4. Expand Riftbound outward through its catalog's priority tiers, measuring the fill tier separately: those circles are wide and are expected to be mostly empty, so a tier-one yield threshold applied to them would read as a failure rather than as an accurate map of a rural county.
+5. Expand Yu-Gi-Oh! across US states in small priority cohorts; investigate official non-US interfaces separately.
+6. Compare country-filtered Pokémon exports with the worldwide export before deciding whether country partitioning improves reliability.
+7. Secure written permission before enabling the Bandai TCG+ and Riftbound collectors in production.
+8. Add first-party or partner feeds where locator interfaces cannot provide defensible coverage.
+9. Publish user-facing coverage language based on measured regions and source categories, never an unqualified “all events” claim.
