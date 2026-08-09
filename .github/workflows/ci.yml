@@ -73,7 +73,11 @@ jobs:
         run: |
           output=$(pnpm --filter @town-map/db test 2>&1)
           echo "$output"
-          if grep -qi "skipped" <<<"$output"; then
+          # Vitest's counts, not the bare word: a passing run says "Skipped
+          # wotc-locator event ..." on stderr, because the collector logging a
+          # discarded record is exactly what one of these tests asserts. Reading
+          # that as a skipped test failed every run whose suite fully passed.
+          if grep -qE "[0-9]+ skipped" <<<"$output"; then
             echo "::error::Database integration tests skipped despite TEST_DATABASE_URL being set."
             exit 1
           fi
