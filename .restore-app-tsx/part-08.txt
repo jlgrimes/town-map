@@ -1,0 +1,112 @@
+Home saved. We couldn't locate it yet; try a city with its state or a ZIP code.");
+        return;
+      }
+      setLocation({ latitude: result.latitude, longitude: result.longitude });
+      setLocationLabel(result.label);
+      setPlaceQuery(normalized);
+      setLocationResolved(true);
+      setLocationNotice(null);
+    } catch {
+      setLocationNotice("Home saved. We couldn't locate it right now, but it remains your default.");
+    } finally {
+      setLocationStatus("idle");
+    }
+  }
+
+  const handleMapSelect = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+    setExpandedEventId(eventId);
+    setExpandedLayoutIdPrefix("map");
+    setHighlightedEventId(null);
+  }, []);
+
+  const handleDiscoverSelect = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+    setExpandedEventId(eventId);
+    setExpandedLayoutIdPrefix("discover");
+  }, []);
+
+  const handleSavedSelect = useCallback((eventId: string) => {
+    setSelectedEventId(eventId);
+    setExpandedEventId(eventId);
+    setExpandedLayoutIdPrefix("saved");
+  }, []);
+
+  const handleClearSelectedEvent = useCallback(() => {
+    setSelectedEventId(null);
+  }, []);
+
+  const emptyState = status === "error" ? {
+    title: "Events could not be loaded",
+    description: "The event service may be temporarily unavailable. Your filters are still saved in this URL.",
+    action: "Try again",
+    onClick: () => setReloadKey((value) => value + 1),
+  } : !locationResolved ? {
+    title: "Where should we look?",
+    description: "Use your location or search a city, ZIP, or address.",
+    action: "Use my location",
+    onClick: () => { void useCurrentLocation(); },
+  } : {
+    title: "Nothing tonight nearby",
+    description: `Try a wider distance or another date near ${locationLabel || "you"}.`,
+    action: "Show this week",
+    onClick: () => { setDateFilter("week"); },
+  };
+
+  return (
+    <Routes>
+      <Route
+        path="/shop/:shopSlug"
+        element={
+          <ShopDetailPage
+            events={events}
+            savedEventIds={savedIds}
+            onToggleSave={toggleSaved}
+            catalog={catalog}
+          />
+        }
+      />
+      <Route
+        path="*"
+        element={
+          <TooltipProvider>
+            <SidebarProvider defaultOpen={false}>
+        <div className="flex min-h-svh w-full bg-background text-foreground">
+          <Sidebar collapsible="icon">
+            <SidebarHeader>
+              <div className="flex h-12 items-center gap-2.5 px-2">
+                <img src="/town-map.png" alt="Town Map logo" className="size-8 object-contain shrink-0" />
+                <span className="font-semibold text-sm group-data-[collapsible=icon]:hidden">Town Map</span>
+              </div>
+            </SidebarHeader>
+
+            <SidebarContent>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={tab === "discover"}
+                        tooltip="Discover"
+                      >
+                        <Link to="/discover">
+                          <Compass />
+                          <span>Discover</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={tab === "my-events"}
+                        tooltip="My events"
+                      >
+                        <Link to="/my-events">
+                          <Bookmark />
+                          <span>My events</span>
+                          {/* Upcoming only. A badge counting a lifetime of past
+                              events would climb forever and stop meaning
+                              anything you need to act on. */}
+                          {canSave && sav
