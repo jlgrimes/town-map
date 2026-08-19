@@ -1,0 +1,44 @@
+isibleEvents.length && (
+                              <div className="py-5 text-center">
+                                <Button variant="outline" className="min-h-11 px-5" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                                  Load {Math.min(PAGE_SIZE, visibleEvents.length - visibleCount)} more
+                                </Button>
+                              </div>
+                            )}
+                            {resultsTruncated && visibleCount >= visibleEvents.length && (
+                              <p className="px-2 pb-1 text-xs text-muted-foreground">
+                                This area has more events than we can show at once. Narrow the distance or
+                                pick fewer games to see the rest.
+                              </p>
+                            )}
+                          </>
+                        )}
+                        <p className="px-2 py-5 text-xs text-muted-foreground">
+                          Verify details with the organizer.
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                </>
+              )}
+            </main>
+          </SidebarInset>
+        </div>
+      </SidebarProvider>
+      <ExpandableEventCardModal
+        event={expandedEvent}
+        layoutIdPrefix={expandedLayoutIdPrefix}
+        onClose={() => setExpandedEventId(null)}
+        saved={expandedEvent ? savedIds.has(expandedEvent.id) : false}
+        canSave={canSave}
+        onToggleSave={toggleSaved}
+        eventMetadata={eventMetadata}
+        formatPrice={formatPrice}
+        recurrenceLabel={recurrenceLabel}
+      />
+    </TooltipProvider>
+        }
+      />
+    </Routes>
+  );
+}
