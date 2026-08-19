@@ -9,8 +9,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   SidebarMenuButton,
 } from "@/components/ui/sidebar";
@@ -140,75 +138,6 @@ export function AccountSettingsCard() {
       </Button>
     </div>
   );
-}
-
-function sortEvents(events: EventListItem[]) {
-  return [...events].sort((a, b) => {
-    const dateDifference = new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
-    const distanceDifference = (a.distanceMiles ?? Number.POSITIVE_INFINITY) - (b.distanceMiles ?? Number.POSITIVE_INFINITY);
-    return dateDifference || distanceDifference || a.title.localeCompare(b.title);
-  });
-}
-
-function eventDateKey(dateString: string) {
-  const date = new Date(dateString);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-
-const SAVED_SECTIONS = [
-  { key: "upcoming", heading: "Upcoming" },
-  { key: "past", heading: "Past" },
-] as const;
-
-function groupEventsByDate(events: EventListItem[]) {
-  const groups: Array<{ key: string; label: string; events: EventListItem[] }> = [];
-  for (const event of events) {
-    const key = eventDateKey(event.startsAt);
-    const current = groups.at(-1);
-    if (current?.key === key) current.events.push(event);
-    else groups.push({ key, label: dateLabel(event.startsAt), events: [event] });
-  }
-  return groups;
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(date.getDate() + days);
-  return next;
-}
-
-const DATE_WINDOW_DAYS: Record<"today" | "3days" | "week" | "month", number> = {
-  today: 1,
-  "3days": 3,
-  week: 7,
-  month: 30,
-};
-
-function matchesDate(event: EventListItem, filter: DateFilter) {
-  if (filter === "all") return true;
-  const eventDate = new Date(event.startsAt);
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (filter === "tomorrow") {
-    const startOfTomorrow = addDays(startOfToday, 1);
-    return eventDate >= startOfTomorrow && eventDate < addDays(startOfTomorrow, 1);
-  }
-  return eventDate >= startOfToday && eventDate < addDays(startOfToday, DATE_WINDOW_DAYS[filter]);
-}
-
-function matchesPrice(event: EventListItem, filter: PriceFilter) {
-  if (filter === "all") return true;
-  if (event.priceAmount === null) return false;
-  if (filter === "free") return event.priceAmount === 0;
-  if (filter === "under10") return event.priceAmount < 10;
-  return event.priceAmount < 25;
-}
-
-function initialNumber(name: string, fallback: number) {
-  const rawValue = initialParams.get(name);
-  if (rawValue === null || rawValue.trim() === "") return fallback;
-  const value = Number(rawValue);
-  return Number.isFinite(value) ? value : fallback;
 }
 
 export function GamePreferencePicker({ value, onChange, catalog }: { value: Game[]; onChange: (games: Game[]) => void; catalog: GameCatalog }) {

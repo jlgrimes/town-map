@@ -105,7 +105,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                       </form>
                     </SpotlightSearch>
 
-                    {auth.signedIn && homeAddress && (
+                    {authSignedIn && homeAddress && (
                       <Button
                         type="button"
                         variant="ghost"
