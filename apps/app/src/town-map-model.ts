@@ -107,7 +107,9 @@ export function matchesDate(event: EventListItem, filter: DateFilter) {
     const startOfTomorrow = addDays(startOfToday, 1);
     return eventDate >= startOfTomorrow && eventDate < addDays(startOfTomorrow, 1);
   }
-  return eventDate >= startOfToday && eventDate < addDays(startOfToday, DATE_WINDOW_DAYS[filter]);
+  const windowDays = DATE_WINDOW_DAYS[filter as keyof typeof DATE_WINDOW_DAYS];
+  if (windowDays === undefined) return true;
+  return eventDate >= startOfToday && eventDate < addDays(startOfToday, windowDays);
 }
 
 export function matchesPrice(event: EventListItem, filter: PriceFilter) {
