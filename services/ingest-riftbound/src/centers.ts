@@ -37,14 +37,9 @@ const TIER_THREE = 30;
 
 type Circle = Pick<SearchCenter, "key" | "name" | "latitude" | "longitude" | "radiusMiles">;
 
-/**
- * Registers a cohort disabled, which is how every circle past the measured one
- * enters the catalog: visible in `/v1/coverage` and reviewable as a diff before
- * it has made a single upstream request. Enable one with
- * `COLLECTOR_REGION_ALLOWLIST` or `COLLECTOR_MAX_REGION_PRIORITY`.
- */
-function awaitingMeasurement(priority: number, circles: Circle[]): SearchCenter[] {
-  return circles.map((circle) => ({ ...circle, countryCode: "US", priority, enabled: false }));
+/** Attaches a rollout tier. Every circle in the catalog collects. */
+function withPriority(priority: number, circles: Circle[]): SearchCenter[] {
+  return circles.map((circle) => ({ ...circle, countryCode: "US", priority }));
 }
 
 /**
@@ -56,16 +51,9 @@ function awaitingMeasurement(priority: number, circles: Circle[]): SearchCenter[
  * is the fill that makes the coverage national rather than metropolitan.
  */
 export const DEFAULT_SEARCH_CENTERS: SearchCenter[] = [
-  // Collecting today. Chicago keeps the key and the 100-mile radius its stored
-  // events are already filed under; narrowing it would withdraw the outer
-  // events it is currently the region of record for.
   { key: "us-il-chicago", name: "Chicago", countryCode: "US", latitude: 41.8781, longitude: -87.6298, radiusMiles: 100, priority: TIER_ONE },
-  // One circle for the whole Bay Area rather than the separate San Jose circle
-  // the Magic catalog needs: at this source's event density both fit well under
-  // the page ceiling, and 75 miles also reaches Santa Rosa and Stockton.
   { key: "us-ca-san-francisco", name: "San Francisco Bay Area", countryCode: "US", latitude: 37.7749, longitude: -122.4194, radiusMiles: 75, priority: TIER_ONE },
-
-  ...awaitingMeasurement(TIER_ONE, [
+  ...withPriority(TIER_ONE, [
     { key: "us-ny-new-york", name: "New York", latitude: 40.7128, longitude: -74.0060, radiusMiles: 75 },
     { key: "us-ca-los-angeles", name: "Los Angeles", latitude: 34.0522, longitude: -118.2437, radiusMiles: 75 },
     { key: "us-tx-dallas", name: "Dallas–Fort Worth", latitude: 32.7767, longitude: -96.7970, radiusMiles: 100 },
@@ -80,8 +68,7 @@ export const DEFAULT_SEARCH_CENTERS: SearchCenter[] = [
     { key: "us-mi-detroit", name: "Detroit", latitude: 42.3314, longitude: -83.0458, radiusMiles: 100 },
     { key: "us-mn-minneapolis", name: "Minneapolis–Saint Paul", latitude: 44.9778, longitude: -93.2650, radiusMiles: 125 },
   ]),
-
-  ...awaitingMeasurement(TIER_TWO, [
+  ...withPriority(TIER_TWO, [
     { key: "us-ca-san-diego", name: "San Diego", latitude: 32.7157, longitude: -117.1611, radiusMiles: 75 },
     { key: "us-co-denver", name: "Denver", latitude: 39.7392, longitude: -104.9903, radiusMiles: 125 },
     { key: "us-fl-tampa", name: "Tampa", latitude: 27.9506, longitude: -82.4572, radiusMiles: 100 },
@@ -130,11 +117,7 @@ export const DEFAULT_SEARCH_CENTERS: SearchCenter[] = [
     { key: "us-ms-jackson", name: "Jackson", latitude: 32.2988, longitude: -90.1848, radiusMiles: 125 },
     { key: "us-ks-wichita", name: "Wichita", latitude: 37.6872, longitude: -97.3301, radiusMiles: 175 },
   ]),
-
-  // The fill. These are not metros; they are the circles that keep the map from
-  // ending at the last metro, and their radii are sized to the emptiness they
-  // cover rather than to a city limit.
-  ...awaitingMeasurement(TIER_THREE, [
+  ...withPriority(TIER_THREE, [
     { key: "us-ca-redding", name: "Redding", latitude: 40.5865, longitude: -122.3917, radiusMiles: 125 },
     { key: "us-or-eugene", name: "Eugene", latitude: 44.0521, longitude: -123.0868, radiusMiles: 150 },
     { key: "us-nv-reno", name: "Reno", latitude: 39.5296, longitude: -119.8138, radiusMiles: 125 },
@@ -183,14 +166,6 @@ function requireFiniteNumber(value: unknown, field: string, index: number) {
   return value;
 }
 
-/**
- * Reads an override catalog, rejecting one that would collect nothing.
- *
- * A center whose radius is missing or misspelled -- `radiusMeters`, the key the
- * Magic collector uses -- sends `num_miles=undefined` to a locator that answers
- * it rather than refusing it, which is indistinguishable from a city with no
- * events unless the catalog refuses it here, where the message names the field.
- */
 export function parseSearchCenters(value: string): SearchCenter[] {
   let parsed: unknown;
   try {

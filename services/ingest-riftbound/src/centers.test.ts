@@ -19,7 +19,6 @@ function coveringCircle(latitude: number, longitude: number) {
   );
 }
 
-/** The largest city in each state and the District of Columbia. */
 const LARGEST_CITIES: Array<[string, number, number]> = [
   ["AL Birmingham", 33.5186, -86.8104], ["AK Anchorage", 61.2181, -149.9003],
   ["AZ Phoenix", 33.4484, -112.0740], ["AR Little Rock", 34.7465, -92.2896],
@@ -49,14 +48,6 @@ const LARGEST_CITIES: Array<[string, number, number]> = [
   ["WY Cheyenne", 41.1400, -104.8202],
 ];
 
-/**
- * Towns far from any metro this catalog is anchored on.
- *
- * The tier-one and tier-two circles alone would cover the country's population
- * and still miss most of its area, and a player in Presque Isle searching a map
- * that claims national coverage gets an empty result rather than an
- * explanation. These are what the fill tier exists for.
- */
 const REACH_POINTS: Array<[string, number, number]> = [
   ["ME Presque Isle", 46.6811, -68.0159], ["MI Traverse City", 44.7631, -85.6206],
   ["OR Medford", 42.3265, -122.8756], ["AZ Flagstaff", 35.1983, -111.6513],
@@ -82,9 +73,9 @@ describe("DEFAULT_SEARCH_CENTERS", () => {
     expect(chicago?.enabled).not.toBe(false);
   });
 
-  it("registers the catalog beyond the measured cohort as disabled", () => {
-    const enabled = DEFAULT_SEARCH_CENTERS.filter((center) => center.enabled !== false);
-    expect(enabled.map((center) => center.key)).toEqual(["us-il-chicago", "us-ca-san-francisco"]);
+  it("enables every region in the catalog", () => {
+    expect(DEFAULT_SEARCH_CENTERS.every((center) => center.enabled !== false)).toBe(true);
+    expect(DEFAULT_SEARCH_CENTERS.length).toBeGreaterThan(2);
   });
 
   it("gives every center a unique key and a usable circle", () => {
@@ -117,10 +108,6 @@ describe("parseSearchCenters", () => {
     ]);
   });
 
-  // The Magic collector's centers use radiusMeters, and copying that shape sent
-  // num_miles=undefined -- a circle the locator answers with something other
-  // than the requested area, which reads as a city with a strange event count
-  // rather than as a misconfiguration.
   it("names the field when a radius is missing", () => {
     const configured = '[{"name":"San Francisco","latitude":37.7749,"longitude":-122.4194,"radiusMeters":50000}]';
     expect(() => parseSearchCenters(configured)).toThrow(/radiusMiles must be a finite number/);

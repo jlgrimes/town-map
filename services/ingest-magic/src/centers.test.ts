@@ -8,9 +8,9 @@ describe("DEFAULT_SEARCH_CENTERS", () => {
     expect(chicago?.enabled).not.toBe(false);
   });
 
-  it("registers the catalog beyond the measured cohort as disabled", () => {
-    const enabled = DEFAULT_SEARCH_CENTERS.filter((center) => center.enabled !== false);
-    expect(enabled.map((center) => center.key)).toEqual(["us-il-chicago", "us-ca-san-francisco"]);
+  it("enables every region in the catalog", () => {
+    expect(DEFAULT_SEARCH_CENTERS.every((center) => center.enabled !== false)).toBe(true);
+    expect(DEFAULT_SEARCH_CENTERS.length).toBeGreaterThan(2);
   });
 
   it("gives every center a unique key and a usable circle", () => {
@@ -26,7 +26,7 @@ describe("DEFAULT_SEARCH_CENTERS", () => {
 });
 
 describe("parseSearchCenters", () => {
-  const valid = '[{"name":"San Francisco","latitude":37.7749,"longitude":-122.4194,"radiusMeters":50000}]';
+  const valid = '[{\"name\":\"San Francisco\",\"latitude\":37.7749,\"longitude\":-122.4194,\"radiusMeters\":50000}]';
 
   it("accepts a well-formed catalog", () => {
     expect(parseSearchCenters(valid)).toEqual([
@@ -38,20 +38,20 @@ describe("parseSearchCenters", () => {
   // sent maxMeters: undefined -- a region that failed every run and read as a
   // city with no events.
   it("names the field when a radius is missing", () => {
-    const configured = '[{"name":"San Francisco","latitude":37.7749,"longitude":-122.4194,"radiusMiles":30}]';
+    const configured = '[{\"name\":\"San Francisco\",\"latitude\":37.7749,\"longitude\":-122.4194,\"radiusMiles\":30}]';
     expect(() => parseSearchCenters(configured)).toThrow(/radiusMeters must be a finite number/);
   });
 
   it.each([
-    ["[]", /non-empty array/],
-    ['{"name":"San Francisco"}', /non-empty array/],
-    ["not json", /not valid JSON/],
-    ['[{"latitude":37.7,"longitude":-122.4,"radiusMeters":50000}]', /name must be a non-empty string/],
-    ['[{"name":"X","latitude":"37.7","longitude":-122.4,"radiusMeters":50000}]', /latitude must be a finite number/],
-    ['[{"name":"X","latitude":91,"longitude":-122.4,"radiusMeters":50000}]', /latitude must be between/],
-    ['[{"name":"X","latitude":37.7,"longitude":-181,"radiusMeters":50000}]', /longitude must be between/],
-    ['[{"name":"X","latitude":37.7,"longitude":-122.4,"radiusMeters":0}]', /radiusMeters must be greater than zero/],
-  ])("rejects %s", (configured, message) => {
+    [\"[]\", /non-empty array/],
+    ['{\"name\":\"San Francisco\"}', /non-empty array/],
+    [\"not json\", /not valid JSON/],
+    ['[{\"latitude\":37.7,\"longitude\":-122.4,\"radiusMeters\":50000}]', /name must be a non-empty string/],
+    ['[{\"name\":\"X\",\"latitude\":\"37.7\",\"longitude\":-122.4,\"radiusMeters\":50000}]', /latitude must be a finite number/],
+    ['[{\"name\":\"X\",\"latitude\":91,\"longitude\":-122.4,\"radiusMeters\":50000}]', /latitude must be between/],
+    ['[{\"name\":\"X\",\"latitude\":37.7,\"longitude\":-181,\"radiusMeters\":50000}]', /longitude must be between/],
+    ['[{\"name\":\"X\",\"latitude\":37.7,\"longitude\":-122.4,\"radiusMeters\":0}]', /radiusMeters must be greater than zero/],
+  ])(\"rejects %s\", (configured, message) => {
     expect(() => parseSearchCenters(configured)).toThrow(message);
   });
 });

@@ -11,9 +11,9 @@ describe("DEFAULT_STATES", () => {
     expect(DEFAULT_STATES.find((state) => state.code === "IL")?.enabled).not.toBe(false);
   });
 
-  it("registers the catalog beyond the measured cohort as disabled", () => {
-    const enabled = DEFAULT_STATES.filter((state) => state.enabled !== false);
-    expect(enabled.map((state) => state.code)).toEqual(["IL", "CA"]);
+  it("enables every region in the catalog", () => {
+    expect(DEFAULT_STATES.every((state) => state.enabled !== false)).toBe(true);
+    expect(DEFAULT_STATES).toHaveLength(51);
   });
 
   it("gives every state a unique two-letter code and a rollout tier", () => {
