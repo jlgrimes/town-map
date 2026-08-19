@@ -94,6 +94,8 @@ type FilterBarProps = {
   defaultGames: Game[];
   resultCount: number;
   className?: string;
+  /** Game chips live on GamePills; hide them here so they aren't duplicated. */
+  showGames?: boolean;
 };
 
 function optionRowClasses(selected: boolean) {
@@ -111,6 +113,7 @@ export function FilterBar({
   defaultGames,
   resultCount,
   className,
+  showGames = true,
 }: FilterBarProps) {
   const [active, setActive] = useState<FilterId[]>(() =>
     FILTER_ORDER.filter(id =>
@@ -126,7 +129,9 @@ export function FilterBar({
   const [radiusDraft, setRadiusDraft] = useState('');
 
   const availableFilters = FILTER_ORDER.filter(id => !active.includes(id));
-  const availableGames = catalog.ids.filter(game => !value.games.includes(game));
+  const availableGames = showGames
+    ? catalog.ids.filter(game => !value.games.includes(game))
+    : [];
 
   const dateOption =
     DATE_OPTIONS.find(option => option.value === value.dateFilter) ??
@@ -261,7 +266,7 @@ export function FilterBar({
   };
 
   const hasAddableOptions = availableGames.length > 0 || availableFilters.length > 0;
-  const hasActiveFilters = value.games.length > 0 || active.length > 0;
+  const hasActiveFilters = (showGames && value.games.length > 0) || active.length > 0;
 
   return (
     <div
@@ -345,7 +350,7 @@ export function FilterBar({
         )}
 
         {/* Game Chips (First) */}
-        {value.games.map(game => (
+        {showGames && value.games.map(game => (
           <FilterChip key={game}>
             <FilterChipValue
               className='gap-1.5 pl-2 pr-1 font-medium hover:bg-transparent cursor-default'
