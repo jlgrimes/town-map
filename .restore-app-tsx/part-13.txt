@@ -1,0 +1,68 @@
+useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
+                          <LocateFixed />
+                        </Button>
+                      </form>
+                    </SpotlightSearch>
+
+                    {auth.signedIn && homeAddress && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-1 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={resetToSavedHome}
+                        disabled={locationStatus === "searching"}
+                      >
+                        <Home className="mr-1.5 size-3.5" />
+                        Use saved home ({homeAddress})
+                      </Button>
+                    )}
+
+                    <FilterBar
+                      className="mt-1"
+                      value={filterValue}
+                      onChange={handleFilterChange}
+                      catalog={catalog}
+                      defaultGames={defaultGames}
+                      resultCount={visibleEvents.length}
+                      showGames={false}
+                    />
+
+                    {locationNotice && (
+                      <p role="status" className="inline-flex items-center gap-1 text-xs text-destructive empty:hidden">
+                        <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
+                      </p>
+                    )}
+                  </section>
+
+                  <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
+                    <h2 id="events-heading" className="sr-only">Events</h2>
+                    <p className="shrink-0 pb-2 text-xs text-muted-foreground">
+                      {!locationResolved
+                        ? (locationStatus === "locating" ? "Finding you…" : "Pick a place to see tonight’s events")
+                        : status === "loading"
+                          ? "Finding events…"
+                          : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel || "you"}`}
+                      {status === "preview" ? " · preview data" : ""}
+                    </p>
+
+                    <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]">
+                      <div className="relative min-h-[46svh] min-w-0 overflow-hidden lg:order-2 lg:min-h-0">
+                        {!locationResolved ? (
+                          <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground lg:min-h-0">
+                            {locationStatus === "locating" ? "Finding your location…" : "Search a city to drop pins."}
+                          </div>
+                        ) : status === "loading" ? (
+                          <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 text-sm text-muted-foreground lg:min-h-0">Preparing the map…</div>
+                        ) : mappableEvents.length === 0 ? (
+                          <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground lg:min-h-0">No mapped venues match these filters.</div>
+                        ) : (
+                          <Suspense fallback={<div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 text-sm text-muted-foreground lg:min-h-0">Loading the map…</div>}>
+                            <EventMap
+                              center={location}
+                              events={mappableEvents}
+                              active
+                              activeEventId={activeEventId}
+                              selectedEventId={selectedEventId}
+                              onSelect={handleMapSelect}
+                 
