@@ -1,0 +1,90 @@
+ tap; a
+   * failure puts the previous list back and says so.
+   */
+  const toggleSaved = useCallback(async (eventId: string) => {
+    if (!canSave) return;
+    const previousUpcoming = savedUpcoming;
+    const previousPast = savedPast;
+    const wasSaved = savedEvents.some((candidate) => candidate.id === eventId);
+    const event = savedEvents.find((candidate) => candidate.id === eventId)
+      ?? events.find((candidate) => candidate.id === eventId);
+    if (!event) return;
+    setSavedNotice(null);
+    if (wasSaved) {
+      // Removal is tried against both lists: taking an event back out of your
+      // history is the only way to correct one you saved but never went to.
+      setSavedUpcoming(previousUpcoming.filter((candidate) => candidate.id !== eventId));
+      setSavedPast(previousPast.filter((candidate) => candidate.id !== eventId));
+    } else {
+      // Only Discover offers a save, and Discover serves nothing in the past.
+      setSavedUpcoming(sortEvents([...previousUpcoming, event]));
+    }
+    try {
+      if (wasSaved) await unsaveEvent(eventId, auth.getToken);
+      else await saveEvent(eventId, auth.getToken);
+    } catch (error) {
+      setSavedUpcoming(previousUpcoming);
+      setSavedPast(previousPast);
+      setSavedNotice(error instanceof Error && error.message
+        ? error.message
+        : (wasSaved
+          ? "We couldn't remove that event. Please try again."
+          : "We couldn't save that event. Please try again."));
+      console.error("Updating saved events failed", error);
+    }
+  }, [auth.getToken, canSave, events, savedEvents, savedPast, savedUpcoming]);
+
+  useEffect(() => {
+    if (!auth.enabled || !auth.loaded) return;
+    if (!auth.signedIn) {
+      setHomeAddress(null);
+      setAccountGames([]);
+      setPreferenceGamesDraft([]);
+      setOnboardingCompleted(false);
+      setPreferencesReady(true);
+      setSelectedGames(initialGames());
+      setPreferenceStatus("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setPreferencesReady(false);
+    setPreferenceStatus("loading");
+    fetchUserPreferences(auth.getToken, controller.signal)
+      .then(async (preferences) => {
+        setHomeAddress(preferences.homeAddress);
+        setHomeDraft(preferences.homeAddress ?? "");
+        setAccountGames(preferences.selectedGames);
+        setPreferenceGamesDraft(preferences.selectedGames);
+        setOnboardingCompleted(preferences.onboardingCompleted);
+        if (initialParams.get("games") === null && preferences.selectedGames.length > 0) {
+          setSelectedGames(preferences.selectedGames);
+        }
+        if (preferences.homeAddress) setPlaceQuery(preferences.homeAddress);
+        const hasUrlLocation = initialParams.has("place") || (initialParams.has("lat") && initialParams.has("lng"));
+        if (preferences.homeAddress && !hasUrlLocation) {
+          try {
+            const result = await geocodePlace(preferences.homeAddress, controller.signal);
+            if (controller.signal.aborted) return;
+            if (result) {
+              setLocation({ latitude: result.latitude, longitude: result.longitude });
+              setLocationLabel(result.label);
+              setLocationResolved(true);
+            } else {
+              setLocationNotice("Your home is saved, but we couldn't locate it right now.");
+            }
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") return;
+            setLocationNotice("Your home is saved, but we couldn't locate it right now.");
+          }
+        }
+        if (controller.signal.aborted) return;
+        setPreferencesReady(true);
+        setPreferenceStatus("idle");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPreferencesReady(false);
+        setPreferenceStatus("error");
+      });
+    return () => controller.abort();
+  }, [auth.enabled, auth.getToken, auth.loaded, auth.sign
