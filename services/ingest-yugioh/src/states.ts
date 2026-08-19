@@ -35,15 +35,15 @@ export const DEFAULT_STATES: StateRegion[] = [
   { code: "IL", priority: TIER_ONE },
   { code: "CA", priority: TIER_ONE },
 
-  // Awaiting a measured dry run.
+  // National catalog, collecting.
   ...["TX", "FL", "NY", "PA", "OH", "GA", "NC", "MI"]
-    .map((code) => ({ code, priority: TIER_ONE, enabled: false })),
+    .map((code) => ({ code, priority: TIER_ONE })),
   ...["NJ", "VA", "WA", "AZ", "TN", "MA", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA"]
-    .map((code) => ({ code, priority: TIER_TWO, enabled: false })),
+    .map((code) => ({ code, priority: TIER_TWO })),
   ...[
     "KY", "OR", "OK", "CT", "UT", "IA", "NV", "AR", "MS", "KS", "NM", "NE", "ID",
     "WV", "HI", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "DC", "VT", "WY",
-  ].map((code) => ({ code, priority: TIER_THREE, enabled: false })),
+  ].map((code) => ({ code, priority: TIER_THREE })),
 ];
 
 const KNOWN_CODES = new Set(DEFAULT_STATES.map((state) => state.code));

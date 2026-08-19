@@ -218,7 +218,7 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
     return { regionsProcessed: enabledDefinitions.length, eventsSeen, eventsWritten: 0, dryRun: true };
   }
 
-  const jobLimit = positiveIntegerEnv("COLLECTOR_JOB_LIMIT", 8, 1);
+  const jobLimit = positiveIntegerEnv("COLLECTOR_JOB_LIMIT", 32, 1);
   const leaseMinutes = positiveIntegerEnv("COLLECTOR_LEASE_MINUTES", 30, 5);
   const retryMinutes = positiveIntegerEnv("COLLECTOR_RETRY_MINUTES", 30, 5);
   const workerId = process.env.COLLECTOR_WORKER_ID ?? `${source}:${process.pid}:${randomUUID()}`;
@@ -254,10 +254,6 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
         const written = await upsertEvents(source, events, { collectionRegionId: claimed.id });
         regionEventsWritten = written.written;
         regionEventsSkipped = written.skipped;
-        // Only after the region's own collection succeeded, so an upstream
-        // failure can never withdraw the events it failed to fetch, and only
-        // for a region that returned all of its events, so one that stopped
-        // short cannot retire the remainder it never asked for.
         if (collected.complete) {
           regionEventsWithdrawn = await withdrawMissingEvents(
             claimed.id,
@@ -298,16 +294,12 @@ export async function runRegionalCollector<TConfig extends Record<string, unknow
       eventsWithdrawn += regionEventsWithdrawn;
     }
 
-    // Once per run rather than once per region: both cover the whole source, so
-    // repeating them per region would repeat the same scan.
     if (regionsProcessed > failures.length) {
       try {
         await refreshSourceEventCount(source);
       } catch (error) {
         failures.push(new Error(`refreshing ${source} event count`, { cause: error }));
       }
-      // Grouping is derived from events already written, so a failure here
-      // leaves the collected events intact and is recoverable by re-running.
       try {
         await assignEventSeries(source);
       } catch (error) {
