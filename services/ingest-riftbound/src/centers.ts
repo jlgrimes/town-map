@@ -201,6 +201,7 @@ export function parseSearchCenters(value: string): SearchCenter[] {
 }
 
 export function getSearchCenters(): SearchCenter[] {
-  const configured = process.env.RIFTBOUND_SEARCH_CENTERS_JSON;
-  return configured ? parseSearchCenters(configured) : DEFAULT_SEARCH_CENTERS;
+  // Coverage is the git catalog. A leftover Railway env used to replace it
+  // with one Illinois circle after the catalog went national.
+  return DEFAULT_SEARCH_CENTERS;
 }
