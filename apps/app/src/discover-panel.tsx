@@ -31,6 +31,7 @@ export type DiscoverPanelProps = {
   setSelectedGames: (games: Game[] | null) => void;
   formatFilter: FormatFilter;
   setFormatFilter: (next: FormatFilter) => void;
+  formatChips: Array<{ value: FormatFilter; label: string }>;
   placeQuery: string;
   setPlaceQuery: (value: string) => void;
   searchPlace: (event: FormEvent<HTMLFormElement>) => void;
@@ -67,7 +68,7 @@ export type DiscoverPanelProps = {
 
 export function DiscoverPanel(p: DiscoverPanelProps) {
   const {
-    catalog, selectedGames, setSelectedGames, formatFilter, setFormatFilter, placeQuery, setPlaceQuery, searchPlace,
+    catalog, selectedGames, setSelectedGames, formatFilter, setFormatFilter, formatChips, placeQuery, setPlaceQuery, searchPlace,
     locationStatus, useCurrentLocation, authSignedIn, homeAddress, resetToSavedHome,
     filterValue, handleFilterChange, defaultGames, visibleEvents, locationNotice,
     locationResolved, locationLabel, status, location, mappableEvents, activeEventId,
@@ -84,10 +85,11 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                       selected={selectedGames}
                       onChange={setSelectedGames}
                     />
-                    {magicIsOn(selectedGames) && (
+                    {magicIsOn(selectedGames) && formatChips.length > 1 && (
                       <FormatPills
                         selected={formatFilter}
                         onChange={setFormatFilter}
+                        chips={formatChips}
                       />
                     )}
                     <SpotlightSearch className="w-full">
