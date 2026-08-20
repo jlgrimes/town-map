@@ -1,32 +1,15 @@
 import type { NormalizedEvent } from "@town-map/contracts";
 import { normalizeAll, runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeOnePieceEvent, type BandaiEvent } from "./normalize.js";
+import { getRegions, type OnePieceRegion } from "./regions.js";
 
 const ENDPOINT = "https://api.bandai-tcg-plus.com/api/user/event/list";
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; TownMap/0.1; +https://town-map-eight.vercel.app)";
-
-type OnePieceRegion = {
-  key?: string;
-  name: string;
-  countryCode: string;
-  prefCodes?: string[];
-  cadenceMinutes?: number;
-  priority?: number;
-  enabled?: boolean;
-};
 
 type SearchResponse = {
   success?: { event_list?: BandaiEvent[]; total?: number };
   error?: { message?: string } | string;
 };
-
-function getRegions(): OnePieceRegion[] {
-  const fallback = [{ name: "United States — IL", countryCode: "US", prefCodes: ["US-IL"] }];
-  if (!process.env.ONEPIECE_REGIONS_JSON) return fallback;
-  const configured = JSON.parse(process.env.ONEPIECE_REGIONS_JSON) as OnePieceRegion[];
-  if (!Array.isArray(configured) || configured.length === 0) throw new Error("ONEPIECE_REGIONS_JSON must be a non-empty array");
-  return configured;
-}
 
 function regions(): RegionalCollectionDefinition<OnePieceRegion>[] {
   return getRegions().map((region) => ({
