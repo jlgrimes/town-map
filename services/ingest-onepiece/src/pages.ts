@@ -1,9 +1,10 @@
 /**
- * Bandai pages 100 events at a time. A US-wide collect is ~30k events.
- * The old default of 100 pages capped at 10k and threw mid-collect.
+ * Bandai honors `limit` up to at least 1000 (probed 2026-08-20).
+ * A US-wide collect is ~30k events. Page size 100 needed 300 pages;
+ * page size 1000 finishes in 31.
  */
-export const ONEPIECE_PAGE_SIZE = 100;
-export const US_ONEPIECE_EVENTS = 30_000;
+export const ONEPIECE_PAGE_SIZE = 1000;
+export const US_ONEPIECE_EVENTS = 31_000;
 export const MIN_ONEPIECE_MAX_PAGES = Math.ceil(US_ONEPIECE_EVENTS / ONEPIECE_PAGE_SIZE);
 export const DEFAULT_ONEPIECE_MAX_PAGES = MIN_ONEPIECE_MAX_PAGES;
 

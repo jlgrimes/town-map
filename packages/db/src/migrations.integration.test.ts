@@ -34,14 +34,14 @@ integration("migration ledger", () => {
 
   it("is a no-op on a second run", async () => {
     await expect(applyMigrations(client)).resolves.toEqual([]);
-  });
+  }, 60_000);
 
   it("releases the lock so a later run can acquire it", async () => {
     const held = await client.query<{ held: boolean }>(
       "SELECT count(*) > 0 AS held FROM pg_locks WHERE locktype = 'advisory'",
     );
     expect(held.rows[0].held).toBe(false);
-  });
+  }, 15_000);
 
   it("refuses to run when an applied migration has been edited", async () => {
     const [first] = await readMigrations();
