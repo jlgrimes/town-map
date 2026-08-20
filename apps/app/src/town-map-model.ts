@@ -38,6 +38,11 @@ const DATE_WINDOW_DAYS: Record<"today" | "3days" | "week" | "month", number> = {
   month: 30,
 };
 
+/** First load never prompts GPS. Locate is a button; events start from a typed city or ZIP. */
+export function shouldAutoLocateOnFirstLoad() {
+  return false;
+}
+
 export function initialGames(params: URLSearchParams): Game[] | null {
   const rawGames = params.get("games");
   if (rawGames === null) return null;
