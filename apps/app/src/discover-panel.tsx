@@ -66,6 +66,76 @@ export type DiscoverPanelProps = {
   resultsTruncated: boolean;
 };
 
+function PlaceSearchForm({
+  placeQuery,
+  setPlaceQuery,
+  searchPlace,
+  locationStatus,
+  useCurrentLocation,
+  autoFocus,
+}: {
+  placeQuery: string;
+  setPlaceQuery: (value: string) => void;
+  searchPlace: (event: FormEvent<HTMLFormElement>) => void;
+  locationStatus: "idle" | "searching" | "locating";
+  useCurrentLocation: () => void;
+  autoFocus: boolean;
+}) {
+  return (
+    <SpotlightSearch className="w-full">
+      <form onSubmit={searchPlace} className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Label className="sr-only" htmlFor="place-search">City, state, or ZIP code</Label>
+          <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground z-20" />
+          <Input
+            id="place-search"
+            value={placeQuery}
+            onChange={(event) => setPlaceQuery(event.target.value)}
+            placeholder="City, ZIP, or address"
+            autoFocus={autoFocus}
+            autoComplete="postal-code"
+            className="h-11 pr-11 pl-10"
+          />
+          {placeQuery && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear location" onClick={() => setPlaceQuery("")}><X /></Button>}
+        </div>
+        <Button type="submit" className="h-11 shrink-0" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+          {locationStatus === "searching" ? "Searching…" : "Search"}
+        </Button>
+        <Button type="button" variant="outline" size="icon" className="size-11 shrink-0" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
+          <LocateFixed />
+        </Button>
+      </form>
+    </SpotlightSearch>
+  );
+}
+
+function SavedHomeButton({
+  authSignedIn,
+  homeAddress,
+  resetToSavedHome,
+  locationStatus,
+}: {
+  authSignedIn: boolean;
+  homeAddress: string | null;
+  resetToSavedHome: () => void;
+  locationStatus: "idle" | "searching" | "locating";
+}) {
+  if (!authSignedIn || !homeAddress) return null;
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="h-7 px-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+      onClick={resetToSavedHome}
+      disabled={locationStatus === "searching"}
+    >
+      <Home className="mr-1.5 size-3.5" />
+      Use saved home ({homeAddress})
+    </Button>
+  );
+}
+
 export function DiscoverPanel(p: DiscoverPanelProps) {
   const {
     catalog, selectedGames, setSelectedGames, formatFilter, setFormatFilter, formatChips, placeQuery, setPlaceQuery, searchPlace,
@@ -76,6 +146,63 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
     emptyState, eventGroups, savedIds, canSave, handleDiscoverSelect, toggleSaved,
     visibleCount, setVisibleCount, resultsTruncated,
   } = p;
+
+  const placeForm = (
+    <PlaceSearchForm
+      placeQuery={placeQuery}
+      setPlaceQuery={setPlaceQuery}
+      searchPlace={searchPlace}
+      locationStatus={locationStatus}
+      useCurrentLocation={useCurrentLocation}
+      autoFocus={!locationResolved}
+    />
+  );
+
+  if (!locationResolved) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <section aria-label="Game filters" className="shrink-0 space-y-2 pb-2">
+          <GamePills
+            catalog={catalog}
+            selected={selectedGames}
+            onChange={setSelectedGames}
+          />
+        </section>
+        <section aria-labelledby="place-heading" className="flex min-h-0 flex-1 flex-col">
+          <h2 id="place-heading" className="sr-only">Choose a place</h2>
+          <DotBackground className="flex min-h-[52svh] flex-1 items-center justify-center rounded-none">
+            <Empty className="w-full max-w-lg py-10 border-none">
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><MapPin /></EmptyMedia>
+                <EmptyTitle className="text-lg">
+                  {locationStatus === "locating" ? "Finding you…" : "Where should we look?"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {locationStatus === "locating"
+                    ? "We’ll drop pins once we have a spot."
+                    : "Search a city, ZIP, or address to see tonight."}
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent className="max-w-lg">
+                {placeForm}
+                <SavedHomeButton
+                  authSignedIn={authSignedIn}
+                  homeAddress={homeAddress}
+                  resetToSavedHome={resetToSavedHome}
+                  locationStatus={locationStatus}
+                />
+                {locationNotice && (
+                  <p role="status" className="inline-flex items-center gap-1 text-xs text-destructive">
+                    <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
+                  </p>
+                )}
+              </EmptyContent>
+            </Empty>
+          </DotBackground>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -92,44 +219,14 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                         chips={formatChips}
                       />
                     )}
-                    <SpotlightSearch className="w-full">
-                      <form onSubmit={searchPlace} className="flex flex-wrap items-center gap-2">
-                        <div className="relative min-w-0 flex-1">
-                          <Label className="sr-only" htmlFor="place-search">City, state, or ZIP code</Label>
-                          <MapPin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground z-20" />
-                          <Input
-                            id="place-search"
-                            value={placeQuery}
-                            onChange={(event) => setPlaceQuery(event.target.value)}
-                            placeholder="City, ZIP, or address"
-                            autoFocus={!locationResolved}
-                            autoComplete="postal-code"
-                            className="h-11 pr-11 pl-10"
-                          />
-                          {placeQuery && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear location" onClick={() => setPlaceQuery("")}><X /></Button>}
-                        </div>
-                        <Button type="submit" className="h-11 shrink-0" disabled={!placeQuery.trim() || locationStatus === "searching"}>
-                          {locationStatus === "searching" ? "Searching…" : "Search"}
-                        </Button>
-                        <Button type="button" variant="outline" size="icon" className="size-11 shrink-0" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
-                          <LocateFixed />
-                        </Button>
-                      </form>
-                    </SpotlightSearch>
+                    {placeForm}
 
-                    {authSignedIn && homeAddress && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                        onClick={resetToSavedHome}
-                        disabled={locationStatus === "searching"}
-                      >
-                        <Home className="mr-1.5 size-3.5" />
-                        Use saved home ({homeAddress})
-                      </Button>
-                    )}
+                    <SavedHomeButton
+                      authSignedIn={authSignedIn}
+                      homeAddress={homeAddress}
+                      resetToSavedHome={resetToSavedHome}
+                      locationStatus={locationStatus}
+                    />
                     <FilterBar
                       className="mt-1"
                       value={filterValue}
@@ -150,9 +247,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                   <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
                     <h2 id="events-heading" className="sr-only">Events</h2>
                     <p className="shrink-0 pb-2 text-xs text-muted-foreground">
-                      {!locationResolved
-                        ? (locationStatus === "locating" ? "Finding you…" : "Pick a place to see tonight’s events")
-                        : status === "loading"
+                      {status === "loading"
                           ? "Finding events…"
                           : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel || "you"}`}
                       {status === "preview" ? " · preview data" : ""}
@@ -160,11 +255,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
 
                     <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]">
                       <div className="relative min-h-[46svh] min-w-0 overflow-hidden lg:order-2 lg:min-h-0">
-                        {!locationResolved ? (
-                          <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground lg:min-h-0">
-                            {locationStatus === "locating" ? "Finding your location…" : "Search a city to drop pins."}
-                          </div>
-                        ) : status === "loading" ? (
+                        {status === "loading" ? (
                           <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 text-sm text-muted-foreground lg:min-h-0">Preparing the map…</div>
                         ) : mappableEvents.length === 0 ? (
                           <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground lg:min-h-0">No mapped venues match these filters.</div>
@@ -186,18 +277,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                       </div>
 
                       <div className="min-h-0 min-w-0 max-h-[42svh] overflow-y-auto overscroll-contain border-t lg:order-1 lg:max-h-none lg:border-t-0 lg:border-r">
-                        {!locationResolved && locationStatus !== "locating" ? (
-                            <DotBackground className="rounded-none">
-                              <Empty className="py-10 border-none">
-                                <EmptyHeader>
-                                  <EmptyMedia variant="icon"><MapPin /></EmptyMedia>
-                                  <EmptyTitle>{emptyState.title}</EmptyTitle>
-                                  <EmptyDescription>{emptyState.description}</EmptyDescription>
-                                </EmptyHeader>
-                                <EmptyContent><Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button></EmptyContent>
-                              </Empty>
-                            </DotBackground>
-                        ) : status === "loading" || locationStatus === "locating" ? (
+                        {status === "loading" || locationStatus === "locating" ? (
                           <LoadingCards />
                         ) : visibleEvents.length === 0 ? (
                           <DotBackground className="rounded-none">
