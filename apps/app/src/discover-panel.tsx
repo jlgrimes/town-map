@@ -12,16 +12,28 @@ import { Label } from "@/components/ui/label";
 import { DotBackground } from "@/components/ui/dot-background";
 import { SpotlightSearch } from "@/components/ui/spotlight-search";
 import { Typography } from "@/components/ui/typography";
-import { EventRow } from "@/components/ui/event-row";
 import { FilterBar, type FilterBarValue } from "@/components/filters/filter-bar";
 import { GamePills } from "@/components/filters/game-pills";
 import { FormatPills, magicIsOn, type FormatFilter } from "@/components/filters/format-pills";
+import { GameIcon } from "@/GameIcon";
+import { dateLabel, timeLabel } from "@/components/ui/event-row";
+import { cn } from "@/lib/utils";
 import { CircleAlert, Home, LocateFixed, MapPin, RefreshCw, Search, X } from "lucide-react";
-import { lazy, Suspense, type FormEvent } from "react";
+import { lazy, Suspense, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { EventListItem, Game } from "@town-map/contracts";
 import type { GameCatalog } from "./games";
 import { LoadingCards } from "./account-chrome";
-import { FIRST_PAINT_PLACE_ASK, PAGE_SIZE, discoverFirstPaint, discoverResultsPaint } from "./town-map-model";
+import { FIRST_PAINT_PLACE_ASK, discoverFirstPaint, discoverResultsPaint } from "./town-map-model";
+import {
+  DEFAULT_HOME_CHIP,
+  HOME_CHIPS,
+  buildCarousels,
+  rankEvents,
+  registrationHref,
+  sliceByHomeChip,
+  type EventCarousel,
+  type HomeChip,
+} from "./discover-rank";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -66,6 +78,15 @@ export type DiscoverPanelProps = {
   resultsTruncated: boolean;
 };
 
+function pillClass(on: boolean) {
+  return cn(
+    "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors",
+    on
+      ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
+      : "border-border bg-card text-foreground hover:bg-muted",
+  );
+}
+
 function PlaceSearchForm({
   placeQuery,
   setPlaceQuery,
@@ -73,6 +94,8 @@ function PlaceSearchForm({
   locationStatus,
   useCurrentLocation,
   autoFocus,
+  compact,
+  extra,
 }: {
   placeQuery: string;
   setPlaceQuery: (value: string) => void;
@@ -80,7 +103,12 @@ function PlaceSearchForm({
   locationStatus: "idle" | "searching" | "locating";
   useCurrentLocation: () => void;
   autoFocus: boolean;
+  compact?: boolean;
+  extra?: ReactNode;
 }) {
+  const field = compact ? "h-9 pr-9 pl-9" : "h-11 pr-11 pl-10";
+  const action = compact ? "h-9 shrink-0" : "h-11 shrink-0";
+  const iconBtn = compact ? "size-9 shrink-0" : "size-11 shrink-0";
   return (
     <SpotlightSearch className="w-full">
       <form onSubmit={searchPlace} className="flex flex-wrap items-center gap-2">
@@ -91,19 +119,20 @@ function PlaceSearchForm({
             id="place-search"
             value={placeQuery}
             onChange={(event) => setPlaceQuery(event.target.value)}
-            placeholder="City, ZIP, or address"
+            placeholder="City or ZIP"
             autoFocus={autoFocus}
             autoComplete="postal-code"
-            className="h-11 pr-11 pl-10"
+            className={field}
           />
-          {placeQuery && <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1.5 size-9 -translate-y-1/2 z-20" aria-label="Clear location" onClick={() => setPlaceQuery("")}><X /></Button>}
+          {placeQuery && <Button type="button" variant="ghost" size="icon" className={`absolute top-1/2 right-1.5 ${compact ? "size-7" : "size-9"} -translate-y-1/2 z-20`} aria-label="Clear location" onClick={() => setPlaceQuery("")}><X /></Button>}
         </div>
-        <Button type="submit" className="h-11 shrink-0" disabled={!placeQuery.trim() || locationStatus === "searching"}>
+        <Button type="submit" className={action} disabled={!placeQuery.trim() || locationStatus === "searching"}>
           {locationStatus === "searching" ? "Searching…" : "Search"}
         </Button>
-        <Button type="button" variant="outline" size="icon" className="size-11 shrink-0" onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
+        <Button type="button" variant="outline" size="icon" className={iconBtn} onClick={useCurrentLocation} disabled={locationStatus === "locating"} aria-label="Use my current location" title="Use my current location">
           <LocateFixed />
         </Button>
+        {extra}
       </form>
     </SpotlightSearch>
   );
@@ -136,18 +165,154 @@ function SavedHomeButton({
   );
 }
 
+function HomeChips({
+  selected,
+  onChange,
+}: {
+  selected: HomeChip;
+  onChange: (next: HomeChip) => void;
+}) {
+  return (
+    <div
+      className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      role="tablist"
+      aria-label="All, For you, Today, This weekend"
+    >
+      {HOME_CHIPS.map((chip) => {
+        const on = selected === chip.value;
+        return (
+          <button
+            key={chip.value}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            className={pillClass(on)}
+            onClick={() => onChange(chip.value)}
+          >
+            {chip.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CompactEventCard({
+  event,
+  active,
+  onPreview,
+  onOpen,
+}: {
+  event: EventListItem;
+  active: boolean;
+  onPreview: (eventId: string | null) => void;
+  onOpen: (event: EventListItem) => void;
+}) {
+  const miles = event.distanceMiles != null ? `${event.distanceMiles} mi` : null;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(event)}
+      onMouseEnter={() => onPreview(event.id)}
+      onMouseLeave={() => onPreview(null)}
+      className={cn(
+        "flex w-56 shrink-0 flex-col gap-2 rounded-2xl border bg-card p-3 text-left shadow-xs transition-colors hover:bg-muted/40",
+        active && "border-border/50 bg-muted/70",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background p-1.5">
+          <GameIcon game={event.game} className="size-7 object-contain" />
+        </div>
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug">{event.title}</p>
+      </div>
+      <p className="truncate text-xs text-muted-foreground">
+        {dateLabel(event.startsAt)} · {timeLabel(event.startsAt)}
+      </p>
+      <p className="truncate text-xs text-muted-foreground">
+        {event.venue?.name ?? "Venue to be announced"}
+        {miles ? ` · ${miles}` : ""}
+      </p>
+    </button>
+  );
+}
+
+function CarouselRow({
+  carousel,
+  activeEventId,
+  onPreview,
+  onOpen,
+}: {
+  carousel: EventCarousel;
+  activeEventId: string | null;
+  onPreview: (eventId: string | null) => void;
+  onOpen: (event: EventListItem) => void;
+}) {
+  return (
+    <section aria-labelledby={`carousel-${carousel.key}`} className="space-y-2">
+      <Typography variant="kicker" as="h3" id={`carousel-${carousel.key}`} className="px-0.5 block">
+        {carousel.heading}
+      </Typography>
+      <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:thin]">
+        {carousel.events.map((event) => (
+          <CompactEventCard
+            key={`${carousel.key}-${event.id}`}
+            event={event}
+            active={event.id === activeEventId}
+            onPreview={onPreview}
+            onOpen={onOpen}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function openOfficialRegister(event: EventListItem) {
+  const href = registrationHref(event);
+  if (!href) return false;
+  window.open(href, "_blank", "noopener,noreferrer");
+  return true;
+}
+
 export function DiscoverPanel(p: DiscoverPanelProps) {
   const {
     catalog, selectedGames, setSelectedGames, formatFilter, setFormatFilter, formatChips, placeQuery, setPlaceQuery, searchPlace,
     locationStatus, useCurrentLocation, authSignedIn, homeAddress, resetToSavedHome,
     filterValue, handleFilterChange, defaultGames, visibleEvents, locationNotice,
-    locationResolved, locationLabel, status, location, mappableEvents, activeEventId,
-    selectedEventId, handleMapSelect, setHighlightedEventId, handleClearSelectedEvent,
-    emptyState, eventGroups, savedIds, canSave, handleDiscoverSelect, toggleSaved,
-    visibleCount, setVisibleCount, resultsTruncated,
+    locationResolved, locationLabel, status, location, activeEventId,
+    handleMapSelect, setHighlightedEventId, handleClearSelectedEvent,
+    emptyState, handleDiscoverSelect, resultsTruncated,
   } = p;
 
-  const placeForm = (
+  const [homeChip, setHomeChip] = useState<HomeChip>(DEFAULT_HOME_CHIP);
+  const [mapOpen, setMapOpen] = useState(false);
+  const now = useMemo(() => new Date(), [visibleEvents, homeChip]);
+  const ranked = useMemo(
+    () => rankEvents(visibleEvents, { now, selectedGames, formatFilter }),
+    [formatFilter, now, selectedGames, visibleEvents],
+  );
+  const sliced = useMemo(
+    () => sliceByHomeChip(ranked, homeChip, now),
+    [homeChip, now, ranked],
+  );
+  const carousels = useMemo(() => buildCarousels(sliced), [sliced]);
+  const slicedMappable = sliced.filter((event) => event.venue?.latitude != null && event.venue.longitude != null);
+
+  const mapToggle = (
+    <Button
+      type="button"
+      variant="outline"
+      className="h-9 shrink-0"
+      aria-pressed={mapOpen}
+      aria-label={mapOpen ? "Hide map" : "Show map"}
+      onClick={() => setMapOpen((open) => !open)}
+    >
+      Map
+    </Button>
+  );
+
+  const heroForm = (
     <PlaceSearchForm
       placeQuery={placeQuery}
       setPlaceQuery={setPlaceQuery}
@@ -155,6 +320,19 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
       locationStatus={locationStatus}
       useCurrentLocation={useCurrentLocation}
       autoFocus={!locationResolved}
+    />
+  );
+
+  const compactForm = (
+    <PlaceSearchForm
+      placeQuery={placeQuery}
+      setPlaceQuery={setPlaceQuery}
+      searchPlace={searchPlace}
+      locationStatus={locationStatus}
+      useCurrentLocation={useCurrentLocation}
+      autoFocus={false}
+      compact
+      extra={mapToggle}
     />
   );
 
@@ -184,7 +362,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="max-w-lg">
-                {placeForm}
+                {heroForm}
                 <SavedHomeButton
                   authSignedIn={authSignedIn}
                   homeAddress={homeAddress}
@@ -206,154 +384,126 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
 
   return (
     <>
-                  <section aria-label="Location and event filters" className="shrink-0 space-y-2 pb-2">
-                    <GamePills
-                      catalog={catalog}
-                      selected={selectedGames}
-                      onChange={setSelectedGames}
-                    />
-                    {magicIsOn(selectedGames) && formatChips.length > 1 && (
-                      <FormatPills
-                        selected={formatFilter}
-                        onChange={setFormatFilter}
-                        chips={formatChips}
-                      />
-                    )}
-                    {placeForm}
+      <section aria-label="Location and event filters" className="shrink-0 space-y-2 pb-2">
+        <GamePills
+          catalog={catalog}
+          selected={selectedGames}
+          onChange={setSelectedGames}
+        />
+        {magicIsOn(selectedGames) && formatChips.length > 1 && (
+          <FormatPills
+            selected={formatFilter}
+            onChange={setFormatFilter}
+            chips={formatChips}
+          />
+        )}
+        <HomeChips selected={homeChip} onChange={setHomeChip} />
+        {compactForm}
+        <SavedHomeButton
+          authSignedIn={authSignedIn}
+          homeAddress={homeAddress}
+          resetToSavedHome={resetToSavedHome}
+          locationStatus={locationStatus}
+        />
+        <FilterBar
+          className="mt-1"
+          value={filterValue}
+          onChange={handleFilterChange}
+          catalog={catalog}
+          defaultGames={defaultGames}
+          resultCount={sliced.length}
+          showGames={false}
+          showDate={false}
+        />
+        {locationNotice && (
+          <p role="status" className="inline-flex items-center gap-1 text-xs text-destructive empty:hidden">
+            <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
+          </p>
+        )}
+      </section>
 
-                    <SavedHomeButton
-                      authSignedIn={authSignedIn}
-                      homeAddress={homeAddress}
-                      resetToSavedHome={resetToSavedHome}
-                      locationStatus={locationStatus}
-                    />
-                    <FilterBar
-                      className="mt-1"
-                      value={filterValue}
-                      onChange={handleFilterChange}
-                      catalog={catalog}
-                      defaultGames={defaultGames}
-                      resultCount={visibleEvents.length}
-                      showGames={false}
-                    />
+      {discoverResultsPaint({ status, visibleCount: visibleEvents.length }) === "empty" ? (
+        <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
+          <h2 id="events-heading" className="sr-only">Events</h2>
+          <p className="shrink-0 pb-2 text-xs text-muted-foreground">
+            {`${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel || "you"}`}
+            {status === "preview" ? " · preview data" : ""}
+          </p>
+          <DotBackground className="flex min-h-[52svh] flex-1 items-center justify-center rounded-none">
+            <Empty className="w-full max-w-lg py-10 border-none">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
+                <EmptyTitle className="text-lg">{emptyState.title}</EmptyTitle>
+                <EmptyDescription>{emptyState.description}</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button>
+              </EmptyContent>
+            </Empty>
+          </DotBackground>
+        </section>
+      ) : (
+        <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col gap-4">
+          <h2 id="events-heading" className="sr-only">Events</h2>
+          <p className="shrink-0 text-xs text-muted-foreground">
+            {status === "loading"
+              ? "Finding events…"
+              : `${sliced.length} ${sliced.length === 1 ? "event" : "events"} near ${locationLabel || "you"}`}
+            {status === "preview" ? " · preview data" : ""}
+          </p>
 
-                    {locationNotice && (
-                      <p role="status" className="inline-flex items-center gap-1 text-xs text-destructive empty:hidden">
-                        <CircleAlert className="size-3.5 shrink-0" />{locationNotice}
-                      </p>
-                    )}
-                  </section>
+          {mapOpen && (
+            <div className="relative min-h-[36svh] min-w-0 overflow-hidden rounded-xl border">
+              {status === "loading" ? (
+                <div className="grid h-full min-h-[36svh] place-items-center bg-muted/20 text-sm text-muted-foreground">Preparing the map…</div>
+              ) : slicedMappable.length === 0 ? (
+                <div className="grid h-full min-h-[36svh] place-items-center bg-muted/20 p-8 text-center text-sm text-muted-foreground">No mapped venues match these filters.</div>
+              ) : (
+                <Suspense fallback={<div className="grid h-full min-h-[36svh] place-items-center bg-muted/20 text-sm text-muted-foreground">Loading the map…</div>}>
+                  <EventMap
+                    center={location}
+                    events={slicedMappable}
+                    active
+                    activeEventId={activeEventId}
+                    selectedEventId={p.selectedEventId}
+                    onSelect={handleMapSelect}
+                    onPreview={setHighlightedEventId}
+                    onDeselect={handleClearSelectedEvent}
+                    catalog={catalog}
+                  />
+                </Suspense>
+              )}
+            </div>
+          )}
 
-                  {discoverResultsPaint({ status, visibleCount: visibleEvents.length }) === "empty" ? (
-                  <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
-                    <h2 id="events-heading" className="sr-only">Events</h2>
-                    <p className="shrink-0 pb-2 text-xs text-muted-foreground">
-                      {`${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel || "you"}`}
-                      {status === "preview" ? " · preview data" : ""}
-                    </p>
-                    <DotBackground className="flex min-h-[52svh] flex-1 items-center justify-center rounded-none">
-                      <Empty className="w-full max-w-lg py-10 border-none">
-                        <EmptyHeader>
-                          <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
-                          <EmptyTitle className="text-lg">{emptyState.title}</EmptyTitle>
-                          <EmptyDescription>{emptyState.description}</EmptyDescription>
-                        </EmptyHeader>
-                        <EmptyContent>
-                          <Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button>
-                        </EmptyContent>
-                      </Empty>
-                    </DotBackground>
-                  </section>
-                  ) : (
-                  <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
-                    <h2 id="events-heading" className="sr-only">Events</h2>
-                    <p className="shrink-0 pb-2 text-xs text-muted-foreground">
-                      {status === "loading"
-                          ? "Finding events…"
-                          : `${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel || "you"}`}
-                      {status === "preview" ? " · preview data" : ""}
-                    </p>
-
-                    <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]">
-                      <div className="relative min-h-[46svh] min-w-0 overflow-hidden lg:order-2 lg:min-h-0">
-                        {status === "loading" ? (
-                          <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 text-sm text-muted-foreground lg:min-h-0">Preparing the map…</div>
-                        ) : mappableEvents.length === 0 ? (
-                          <div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 p-8 text-center text-sm text-muted-foreground lg:min-h-0">No mapped venues match these filters.</div>
-                        ) : (
-                          <Suspense fallback={<div className="grid h-full min-h-[46svh] place-items-center border bg-muted/20 text-sm text-muted-foreground lg:min-h-0">Loading the map…</div>}>
-                            <EventMap
-                              center={location}
-                              events={mappableEvents}
-                              active
-                              activeEventId={activeEventId}
-                              selectedEventId={selectedEventId}
-                              onSelect={handleMapSelect}
-                              onPreview={setHighlightedEventId}
-                              onDeselect={handleClearSelectedEvent}
-                              catalog={catalog}
-                            />
-                          </Suspense>
-                        )}
-                      </div>
-
-                      <div className="min-h-0 min-w-0 max-h-[42svh] overflow-y-auto overscroll-contain border-t lg:order-1 lg:max-h-none lg:border-t-0 lg:border-r">
-                        {status === "loading" || locationStatus === "locating" ? (
-                          <LoadingCards />
-                        ) : (
-                          <>
-                            <div className="border-b" aria-label="Event results">
-                              {eventGroups.map((group) => (
-                                <section key={group.key} aria-labelledby={`date-${group.key}`}>
-                                  <Typography
-                                    variant="kicker"
-                                    as="h3"
-                                    id={`date-${group.key}`}
-                                    className="border-b bg-muted/35 px-3 py-2 block"
-                                  >
-                                    {group.label}
-                                  </Typography>
-                                  <ol className="divide-y">
-                                    {group.events.map((event) => (
-                                      <EventRow
-                                        key={event.id}
-                                        event={event}
-                                        active={event.id === activeEventId}
-                                        saved={savedIds.has(event.id)}
-                                        canSave={canSave}
-                                        layoutIdPrefix="discover"
-                                        onPreview={setHighlightedEventId}
-                                        onSelect={handleDiscoverSelect}
-                                        onToggleSave={toggleSaved}
-                                      />
-                                    ))}
-                                  </ol>
-                                </section>
-                              ))}
-                            </div>
-                            {visibleCount < visibleEvents.length && (
-                              <div className="py-5 text-center">
-                                <Button variant="outline" className="min-h-11 px-5" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                                  Load {Math.min(PAGE_SIZE, visibleEvents.length - visibleCount)} more
-                                </Button>
-                              </div>
-                            )}
-                            {resultsTruncated && visibleCount >= visibleEvents.length && (
-                              <p className="px-2 pb-1 text-xs text-muted-foreground">
-                                This area has more events than we can show at once. Narrow the distance or
-                                pick fewer games to see the rest.
-                              </p>
-                            )}
-                          </>
-                        )}
-                        <p className="px-2 py-5 text-xs text-muted-foreground">
-                          Verify details with the organizer.
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-                  )}
-
+          {status === "loading" || locationStatus === "locating" ? (
+            <LoadingCards />
+          ) : carousels.length === 0 ? (
+            <p className="py-8 text-sm text-muted-foreground">Nothing in this window. Try All or For you.</p>
+          ) : (
+            <div className="flex min-h-0 flex-col gap-6">
+              {carousels.map((carousel) => (
+                <CarouselRow
+                  key={carousel.key}
+                  carousel={carousel}
+                  activeEventId={activeEventId}
+                  onPreview={setHighlightedEventId}
+                  onOpen={(event) => { if (!openOfficialRegister(event)) handleDiscoverSelect(event.id); }}
+                />
+              ))}
+            </div>
+          )}
+          {resultsTruncated && (
+            <p className="text-xs text-muted-foreground">
+              This area has more events than we can show at once. Narrow the distance or
+              pick fewer games to see the rest.
+            </p>
+          )}
+          <p className="pb-5 text-xs text-muted-foreground">
+            Verify details with the organizer.
+          </p>
+        </section>
+      )}
     </>
   );
 }
