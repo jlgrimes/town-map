@@ -170,12 +170,13 @@ export function buildCarousels(sliced: EventListItem[]): EventCarousel[] {
     .filter((event) => event.series?.cadenceDays === 7)
     .slice(0, CAROUSEL_LIMIT);
 
-  return [
+  const rows: EventCarousel[] = [
     { key: "for-you", heading: "For you", events: forYou },
     { key: "starting-soon", heading: "Starting soon", events: startingSoon },
     { key: "nearby", heading: "Nearby", events: nearby },
     { key: "repeats-weekly", heading: "Repeats weekly", events: weekly },
-  ].filter((carousel) => carousel.events.length > 0);
+  ];
+  return rows.filter((carousel) => carousel.events.length > 0);
 }
 
 export function registrationHref(event: EventListItem): string | null {
