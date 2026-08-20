@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EventListItem } from "@town-map/contracts";
 import {
   FIRST_PAINT_PLACE_ASK,
+  discoverDateWindow,
   discoverFirstPaint,
   discoverResultsPaint,
   initialDateFilter,
@@ -50,8 +51,8 @@ describe("Discover live path defaults", () => {
     expect(initialTab(new URLSearchParams())).toBe("discover");
   });
 
-  it("defaults the dated window to today so Tonight is the product path", () => {
-    expect(initialDateFilter(new URLSearchParams())).toBe("today");
+  it("defaults the dated window to all so Eventbrite chips own the time slice", () => {
+    expect(initialDateFilter(new URLSearchParams())).toBe("all");
   });
 
   it("keeps tonight and drops tomorrow when the window is today", () => {
@@ -83,5 +84,11 @@ describe("first load location", () => {
     expect(discoverResultsPaint({ status: "error", visibleCount: 0 })).toBe("empty");
     expect(discoverResultsPaint({ status: "loading", visibleCount: 0 })).toBe("map-list");
     expect(discoverResultsPaint({ status: "live", visibleCount: 3 })).toBe("map-list");
+  });
+
+  it("widens the client date window after a place is chosen so This weekend is not empty", () => {
+    expect(discoverDateWindow("today", false)).toBe("today");
+    expect(discoverDateWindow("today", true)).toBe("all");
+    expect(discoverDateWindow("week", true)).toBe("week");
   });
 });
