@@ -9,6 +9,7 @@ import {
   initialTab,
   matchesDate,
   matchesPrice,
+  locatePath,
   shouldAutoLocateOnFirstLoad,
 } from "./town-map-model";
 
@@ -71,6 +72,11 @@ describe("Discover live path defaults", () => {
 describe("first load location", () => {
   it("does not auto-prompt GPS, so a denied prompt cannot become the default screen", () => {
     expect(shouldAutoLocateOnFirstLoad()).toBe(false);
+  });
+
+  it("web Locate uses the browser geolocation tap, not a Capacitor permissions hop", () => {
+    expect(locatePath(false)).toBe("browser");
+    expect(locatePath(true)).toBe("native");
   });
 
   it("first load without a place is the city/ZIP ask, not an empty map", () => {
