@@ -96,6 +96,7 @@ type FilterBarProps = {
   className?: string;
   /** Game chips live on GamePills; hide them here so they aren't duplicated. */
   showGames?: boolean;
+  showDate?: boolean;
 };
 
 function optionRowClasses(selected: boolean) {
@@ -114,9 +115,11 @@ export function FilterBar({
   resultCount,
   className,
   showGames = true,
+  showDate = true,
 }: FilterBarProps) {
+  const filterOrder = FILTER_ORDER.filter(id => showDate || id !== 'date');
   const [active, setActive] = useState<FilterId[]>(() =>
-    FILTER_ORDER.filter(id =>
+    filterOrder.filter(id =>
       id === 'date'
         ? value.dateFilter !== 'all'
         : id === 'distance'
@@ -128,7 +131,7 @@ export function FilterBar({
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [radiusDraft, setRadiusDraft] = useState('');
 
-  const availableFilters = FILTER_ORDER.filter(id => !active.includes(id));
+  const availableFilters = filterOrder.filter(id => !active.includes(id));
   const availableGames = showGames
     ? catalog.ids.filter(game => !value.games.includes(game))
     : [];
@@ -349,7 +352,6 @@ export function FilterBar({
           </Popover>
         )}
 
-        {/* Game Chips (First) */}
         {showGames && value.games.map(game => (
           <FilterChip key={game}>
             <FilterChipValue
@@ -374,7 +376,6 @@ export function FilterBar({
           </FilterChip>
         ))}
 
-        {/* Standard Filter Chips */}
         {active.map(id => {
           const definition = FILTERS[id];
           const Icon = definition.icon;
