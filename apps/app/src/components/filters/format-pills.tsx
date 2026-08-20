@@ -1,3 +1,4 @@
+import { PLAYER_MAGIC_FORMATS } from "@town-map/contracts";
 import { cn } from "@/lib/utils";
 
 export type MagicFormat = "commander" | "standard" | "modern" | "pioneer" | "draft" | "sealed";
@@ -5,43 +6,18 @@ export type FormatFilter = "all" | MagicFormat;
 
 export const MAGIC_FORMAT_CHIPS: Array<{ value: FormatFilter; label: string }> = [
   { value: "all", label: "All formats" },
-  { value: "commander", label: "Commander" },
-  { value: "standard", label: "Standard" },
-  { value: "modern", label: "Modern" },
-  { value: "pioneer", label: "Pioneer" },
-  { value: "draft", label: "Draft" },
-  { value: "sealed", label: "Sealed" },
+  ...PLAYER_MAGIC_FORMATS.map((label) => ({
+    value: label.toLowerCase() as MagicFormat,
+    label,
+  })),
 ];
 
-const MAGIC_FORMATS: MagicFormat[] = ["commander", "standard", "modern", "pioneer", "draft", "sealed"];
+const MAGIC_FORMATS = PLAYER_MAGIC_FORMATS.map((label) => label.toLowerCase() as MagicFormat);
 
-const ALIASES: Record<"commander" | "draft" | "sealed", string[]> = {
-  commander: ["commander"],
-  draft: ["booster draft", "booster_draft", "draft"],
-  sealed: ["sealed", "sealed deck", "sealed_deck"],
-};
-
-const TITLE_FORMATS: MagicFormat[] = ["standard", "modern", "pioneer"];
-
-function hasWord(haystack: string, word: string) {
-  return new RegExp(`\\b${word}\\b`, "i").test(haystack);
-}
-
-/**
- * Players' language, not WPN's dump.
- * Commander / Draft / Sealed stay on the payload format.
- * Standard / Modern / Pioneer are derived from the title when WPN stuffed them into Constructed.
- */
-export function playerFormat(format: string | null, title: string): MagicFormat | null {
+/** Read GET /v1/events format. The API already lifted player language; do not map titles here. */
+export function playerFormat(format: string | null): MagicFormat | null {
   const raw = (format ?? "").trim().toLowerCase();
-  if (ALIASES.commander.some((alias) => raw === alias || raw.includes(alias))) return "commander";
-  if (ALIASES.draft.some((alias) => raw === alias || raw.includes(alias))) return "draft";
-  if (ALIASES.sealed.some((alias) => raw === alias || raw.includes(alias))) return "sealed";
-  const haystack = `${raw} ${title}`;
-  for (const name of TITLE_FORMATS) {
-    if (hasWord(haystack, name)) return name;
-  }
-  return null;
+  return MAGIC_FORMATS.includes(raw as MagicFormat) ? (raw as MagicFormat) : null;
 }
 
 export function initialFormat(params: URLSearchParams): FormatFilter {
@@ -54,17 +30,17 @@ export function nextFormatSelection(current: FormatFilter, tapped: FormatFilter)
   return current === tapped ? "all" : tapped;
 }
 
-export function matchesFormat(format: string | null, filter: FormatFilter, title = ""): boolean {
+export function matchesFormat(format: string | null, filter: FormatFilter, _title?: string): boolean {
   if (filter === "all") return true;
-  return playerFormat(format, title) === filter;
+  return playerFormat(format) === filter;
 }
 
 export function magicIsOn(selectedGames: string[]): boolean {
   return selectedGames.length === 0 || selectedGames.includes("magic");
 }
 
-export function formatChipsForEvents(events: Array<{ format: string | null; title: string }>) {
-  const present = new Set(events.map((event) => playerFormat(event.format, event.title)));
+export function formatChipsForEvents(events: Array<{ format: string | null }>) {
+  const present = new Set(events.map((event) => playerFormat(event.format)));
   return MAGIC_FORMAT_CHIPS.filter((chip) => chip.value === "all" || present.has(chip.value));
 }
 

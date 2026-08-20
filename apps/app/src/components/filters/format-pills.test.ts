@@ -26,40 +26,32 @@ describe("nextFormatSelection", () => {
 });
 
 describe("playerFormat", () => {
-  it("Standard in the title lands on the Standard chip", () => {
-    expect(playerFormat("Constructed", "Friday Night Magic Standard")).toBe("standard");
-    expect(matchesFormat("Constructed", "standard", "Friday Night Magic Standard")).toBe(true);
+  it("reads Standard from the payload, not the title", () => {
+    expect(playerFormat("Standard")).toBe("standard");
+    expect(matchesFormat("Standard", "standard")).toBe(true);
+    expect(playerFormat("Constructed")).toBeNull();
     expect(MAGIC_FORMAT_CHIPS.some((chip) => chip.value === "standard" && chip.label === "Standard")).toBe(true);
-    expect(
-      formatChipsForEvents([{ format: "Constructed", title: "Friday Night Magic Standard" }]).some(
-        (chip) => chip.label === "Standard",
-      ),
-    ).toBe(true);
-  });
-
-  it("derives Modern and Pioneer from the title when WPN says Constructed", () => {
-    expect(playerFormat("Constructed", "Modern FNM")).toBe("modern");
-    expect(playerFormat("Constructed", "Pioneer Challenge")).toBe("pioneer");
+    expect(formatChipsForEvents([{ format: "Standard" }]).some((chip) => chip.label === "Standard")).toBe(true);
   });
 
   it("does not ship Constructed as a chip", () => {
     expect(MAGIC_FORMAT_CHIPS.map((chip) => chip.label)).not.toContain("Constructed");
-    expect(playerFormat("Constructed", "Friday Night Magic")).toBeNull();
+    expect(playerFormat("Constructed")).toBeNull();
   });
 
   it("hides a chip if that night has none", () => {
     const chips = formatChipsForEvents([
-      { format: "Commander", title: "Commander Night" },
-      { format: "Constructed", title: "Friday Night Magic Standard" },
+      { format: "Commander" },
+      { format: "Standard" },
     ]);
     expect(chips.map((chip) => chip.label)).toEqual(["All formats", "Commander", "Standard"]);
     expect(chips.map((chip) => chip.label)).not.toContain("Pioneer");
   });
 
-  it("keeps Commander, Draft, and Sealed from the payload format", () => {
-    expect(playerFormat("Commander", "Commander Night")).toBe("commander");
-    expect(playerFormat("Booster Draft", "Friday Night Magic")).toBe("draft");
-    expect(playerFormat("Sealed", "Prerelease")).toBe("sealed");
+  it("reads Commander, Draft, and Sealed from the payload", () => {
+    expect(playerFormat("Commander")).toBe("commander");
+    expect(playerFormat("Draft")).toBe("draft");
+    expect(playerFormat("Sealed")).toBe("sealed");
   });
 });
 
@@ -69,9 +61,9 @@ describe("matchesFormat", () => {
     expect(matchesFormat(null, "all")).toBe(true);
   });
 
-  it("Draft matches live WPN Booster Draft labels", () => {
-    expect(matchesFormat("Booster Draft", "draft")).toBe(true);
-    expect(matchesFormat("booster_draft", "draft")).toBe(true);
+  it("Draft matches the payload Draft label", () => {
+    expect(matchesFormat("Draft", "draft")).toBe(true);
+    expect(matchesFormat("Booster Draft", "draft")).toBe(false);
   });
 
   it("Commander is not Draft", () => {
