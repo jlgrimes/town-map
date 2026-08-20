@@ -152,7 +152,7 @@ describe("rankEvents", () => {
 });
 
 describe("time chips slice the ranked list", () => {
-  const thursday = new Date(2026, 7, 20, 12);
+  const thursday = new Date(2026, 7, 20, 12); // Aug 20 2026 is Thursday
   const friday = event({ id: "fri", startsAt: new Date(2026, 7, 21, 19).toISOString() });
   const saturday = event({ id: "sat", startsAt: new Date(2026, 7, 22, 13).toISOString() });
   const todayThu = event({ id: "thu", startsAt: new Date(2026, 7, 20, 18).toISOString() });
