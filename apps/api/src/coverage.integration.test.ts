@@ -1,7 +1,11 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoverageResponse, CoverageSource } from "@town-map/contracts";
-import { registerCollectionRegions } from "@town-map/db";
+import {
+  claimNextCollectionRegion,
+  finishCollectionRegion,
+  registerCollectionRegions,
+} from "@town-map/db";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const integration = connectionString ? describe : describe.skip;
@@ -56,6 +60,20 @@ function uniqueRegionKeys(body: CoverageResponse, source: string) {
 
 function regionLabels(body: CoverageResponse, source: string) {
   return body.regions.filter((region) => region.source === source).map((region) => region.label);
+}
+
+function bandaiUs(body: CoverageResponse) {
+  const found = body.regions.find((region) => region.source === ONE_PIECE && region.key === "US");
+  expect(found).toBeDefined();
+  return found!;
+}
+
+async function finishOnePieceUs(
+  outcome: { status: "succeeded" } | { status: "failed"; error: string },
+) {
+  const claimed = await claimNextCollectionRegion(ONE_PIECE, "worker-us", 30, client);
+  expect(claimed?.key).toBe("US");
+  await finishCollectionRegion(claimed!.id, "worker-us", outcome, client);
 }
 
 integration("/v1/coverage live path", () => {
@@ -148,5 +166,45 @@ integration("/v1/coverage live path", () => {
     expect(coverage.enabledRegions).toBe(1);
     expect(uniqueRegionKeys(body, ONE_PIECE)).toEqual(["US:US-IL"]);
     expect(regionLabels(body, ONE_PIECE).some((label) => /\bIL\b/.test(label))).toBe(true);
+  });
+
+  it("fails if One Piece US has no lastSuccessAt or is failing", async () => {
+    await registerCollectionRegions(ONE_PIECE, nationalOnePiece, client);
+    await finishOnePieceUs({ status: "succeeded" });
+
+    const response = await getCoverage();
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as CoverageResponse;
+
+    expect(uniqueRegionKeys(body, ONE_PIECE)).toEqual(["US"]);
+    expect(uniqueRegionKeys(body, ONE_PIECE)).not.toEqual(["US:US-IL"]);
+    expect(regionLabels(body, ONE_PIECE).some((label) => /Illinois/i.test(label))).toBe(false);
+
+    const us = bandaiUs(body);
+    expect(us.lastSuccessAt).toEqual(expect.any(String));
+    expect(us.status).not.toBe("failing");
+
+    const coverage = sourceCoverage(body, ONE_PIECE);
+    expect(coverage.failingRegions).toBe(0);
+    expect(coverage.latestSuccessAt).toEqual(expect.any(String));
+  });
+
+  it("documents the One Piece US failing / no-success shape the lock forbids", async () => {
+    await registerCollectionRegions(ONE_PIECE, nationalOnePiece, client);
+    await finishOnePieceUs({ status: "failed", error: "page cap" });
+
+    const response = await getCoverage();
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as CoverageResponse;
+
+    expect(uniqueRegionKeys(body, ONE_PIECE)).toEqual(["US"]);
+
+    const us = bandaiUs(body);
+    expect(us.lastSuccessAt).toBeNull();
+    expect(us.status).toBe("failing");
+
+    const coverage = sourceCoverage(body, ONE_PIECE);
+    expect(coverage.failingRegions).toBe(1);
+    expect(coverage.latestSuccessAt).toBeNull();
   });
 });
