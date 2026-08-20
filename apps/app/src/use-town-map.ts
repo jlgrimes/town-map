@@ -20,6 +20,7 @@ import {
   type PriceFilter,
 } from "@/components/filters/filter-bar";
 import {
+  formatChipsForEvents,
   initialFormat,
   magicIsOn,
   matchesFormat,
@@ -324,9 +325,17 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     setHighlightedEventId(null);
   }, [dateFilter, formatFilter, priceFilter, radiusMiles, selectedGames]);
 
+  const formatChips = useMemo(
+    () => formatChipsForEvents(
+      events.filter((event) => event.game === "magic" && matchesDate(event, dateFilter)),
+    ),
+    [dateFilter, events],
+  );
+
   useEffect(() => {
     if (!magicIsOn(selectedGames) && formatFilter !== "all") setFormatFilter("all");
-  }, [formatFilter, selectedGames]);
+    else if (formatFilter !== "all" && !formatChips.some((chip) => chip.value === formatFilter)) setFormatFilter("all");
+  }, [formatChips, formatFilter, selectedGames]);
 
   // The date and price filters are derived from data already on screen; the
   // location and radius are what the API request itself is scoped to.
@@ -520,7 +529,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     dateFilter, setDateFilter, urlHasLocation, location, locationLabel, locationResolved,
     homeAddress, homeDraft, setHomeDraft, preferenceGamesDraft, setPreferenceGamesDraft,
     onboardingCompleted, preferencesReady, homeNotice, preferenceStatus, placeQuery, setPlaceQuery,
-    radiusMiles, priceFilter, formatFilter, setFormatFilter, status, locationStatus, locationNotice, visibleCount, setVisibleCount,
+    radiusMiles, priceFilter, formatFilter, setFormatFilter, formatChips, status, locationStatus, locationNotice, visibleCount, setVisibleCount,
     selectedEventId, expandedEventId, setExpandedEventId, expandedLayoutIdPrefix, highlightedEventId, setHighlightedEventId,
     tab, setTab, savedUpcoming, savedPast, savedStatus, savedNotice, setSavedReloadKey,
     savedEvents, expandedEvent, canSave, savedIds, toggleSaved, searchPlace, useCurrentLocation,
