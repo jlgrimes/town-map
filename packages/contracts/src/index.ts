@@ -68,19 +68,10 @@ const MAX_PRICE_AMOUNT = 99_999_999.99;
 
 const NUL_PATTERN = /\u0000/g;
 
-/**
- * Removes NUL, which PostgreSQL rejects in `text` and in `jsonb` alike.
- *
- * No source means to publish one; it arrives inside free text as an artefact of
- * whatever produced the upstream record. Stripped here rather than at the write
- * because `raw` is stored verbatim and carries the same hazard as the columns,
- * and because one such character in one event used to fail the whole batch.
- */
 function withoutNulCharacters<T>(value: T): T {
   if (typeof value === "string") return value.replace(NUL_PATTERN, "") as T;
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map(withoutNulCharacters) as T;
-  // Anything exotic is left alone rather than rebuilt as a plain object.
   if (Object.getPrototypeOf(value) !== Object.prototype) return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, entry]) => [
@@ -90,24 +81,8 @@ function withoutNulCharacters<T>(value: T): T {
   ) as T;
 }
 
-/**
- * An event as a collector produces it.
- *
- * Two kinds of field, treated differently on purpose. What identifies an
- * occurrence -- its id, title and start -- is validated strictly, and an event
- * missing any of it is not an event worth storing. Everything descriptive falls
- * back to null when a source publishes something unusable, because losing a
- * capacity is a better outcome than losing the event, and, since these are
- * written in batches, better than losing the events collected alongside it.
- */
 const NormalizedEventShape = z.object({
   sourceEventId: z.string(),
-  /**
-   * Identifier for the recurring series this occurrence belongs to, when the
-   * upstream source publishes one. Authoritative where present; otherwise the
-   * series is derived from the occurrence's venue, game, format and local
-   * schedule.
-   */
   sourceSeriesId: z.string().nullable().default(null),
   game: GameSchema,
   title: z.string().min(1),
@@ -120,8 +95,6 @@ const NormalizedEventShape = z.object({
   eventType: z.string().nullable().default(null),
   sourceUrl: z.string().nullable().default(null),
   registrationUrl: z.string().nullable().default(null),
-  // Bounded by the column rather than by anything about events: a price or a
-  // headcount too large to store is dropped so the event survives the write.
   priceAmount: z.number().min(0).max(MAX_PRICE_AMOUNT).nullable().default(null).catch(null),
   priceCurrency: z.string().nullable().default(null),
   capacity: z.number().int().min(0).max(MAX_CAPACITY).nullable().default(null).catch(null),
@@ -133,13 +106,6 @@ const NormalizedEventShape = z.object({
 export const NormalizedEventSchema = NormalizedEventShape.transform(withoutNulCharacters);
 export type NormalizedEvent = z.infer<typeof NormalizedEventSchema>;
 
-/**
- * The recurring series an event belongs to, when it belongs to one.
- *
- * `cadenceDays` stays null until the series has been observed often enough to
- * assert an interval, so a client can distinguish "known to repeat weekly" from
- * "grouped, but the schedule is not established yet".
- */
 export const EventSeriesSummarySchema = z.object({
   id: z.string(),
   cadenceDays: z.number().int().positive().nullable(),
@@ -184,19 +150,9 @@ export type EventListItem = z.infer<typeof EventListItemSchema>;
 
 export const EventQuerySchema = z.object({
   games: z.array(GameSchema).default([]),
-  // Expanded to the games it contains before the query runs, so the hot path
-  // never joins the taxonomy tables.
   categories: z.array(CategorySchema).default([]),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  /**
-   * Free-text query, matched against the event's title, game, format, type and
-   * venue. Parsed by PostgreSQL as a web search string, so quoted phrases and
-   * `-exclusions` work and no input can be malformed enough to error.
-   *
-   * Bounded well above any real query: the length exists to keep a pathological
-   * string out of the parser, not to constrain what someone can type.
-   */
   q: z.string().trim().min(1).max(200).optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
@@ -216,26 +172,8 @@ export const EventPageSchema = z.object({
 });
 export type EventPage = z.infer<typeof EventPageSchema>;
 
-/** A saved event is addressed by the event's own id, which is a UUID. */
 export const EventIdSchema = z.string().uuid();
 
-/**
- * Response of `GET /v1/saved-events`.
- *
- * Split by the server rather than returned flat with a date for the client to
- * compare against: "past" depends on the current time, and a device with a
- * skewed clock would otherwise file an event under the wrong heading. The two
- * lists are ordered by what each is for -- `upcoming` soonest first, because it
- * answers "what is next", and `past` most recent first, because it answers
- * "where have I been".
- *
- * A past entry may outlive the event it came from: saves carry their own copy of
- * the event, so retention deleting the event empties the copy's series summary
- * and freezes its details, but does not remove the entry.
- *
- * Uncursored, unlike `EventPage`: a saved list is bounded by how many events one
- * person chose to save, not by how many exist near them.
- */
 export const SavedEventsSchema = z.object({
   upcoming: z.array(EventListItemSchema),
   past: z.array(EventListItemSchema),
@@ -279,9 +217,6 @@ export const CoverageSourceSchema = z.object({
   failingRegions: z.number().int().nonnegative(),
   runningRegions: z.number().int().nonnegative(),
   upcomingEvents: z.number().int().nonnegative(),
-  // When `upcomingEvents` was last recomputed. Null before a source has
-  // completed its first collection run. Exposed so consumers can tell a genuine
-  // zero from a snapshot that has not been refreshed yet.
   upcomingEventsComputedAt: z.string().datetime().nullable(),
   latestSuccessAt: z.string().datetime().nullable(),
 });
@@ -306,8 +241,6 @@ export const HomeAddressSchema = z.string().trim().min(1).max(500);
 
 export const UserPreferencesUpdateSchema = z.object({
   homeAddress: HomeAddressSchema,
-  // Only the shape is checked here; the API rejects slugs that are not in the
-  // registry, which no longer has a compile-time length to bound against.
   selectedGames: z.array(GameSchema).min(1).max(64),
 });
 
@@ -318,13 +251,6 @@ export const UserPreferencesSchema = z.object({
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
-/**
- * How a series' observed cadence reads to a person, or null when there is not
- * enough evidence to describe one.
- *
- * Intervals are matched with tolerance because a store that runs "every month"
- * lands on 28, 30 or 31 days depending on the month.
- */
 export function recurrenceLabel(series: EventSeriesSummary | null): string | null {
   const days = series?.cadenceDays;
   if (!days) return null;
@@ -336,13 +262,16 @@ export function recurrenceLabel(series: EventSeriesSummary | null): string | nul
   return `Repeats every ${days} days`;
 }
 
-/**
- * Fallback label for a slug the client has no registry entry for, so an event
- * type added to the database still renders in a client built before it existed.
- */
 export function fallbackGameLabel(game: Game) {
   return game
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
+
+export {
+  PLAYER_MAGIC_FORMATS,
+  playerMagicFormat,
+  withPlayerMagicFormat,
+} from "./player-format.js";
+export type { PlayerMagicFormat } from "./player-format.js";
