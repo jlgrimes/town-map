@@ -13,17 +13,17 @@ describe("ONEPIECE_MAX_PAGES", () => {
     delete process.env.ONEPIECE_MAX_PAGES;
   });
 
-  it("does not fail a 30k US collect at the old 10k event / 100 page cap", () => {
-    expect(ONEPIECE_PAGE_SIZE * 100).toBe(10_000);
-    expect(MIN_ONEPIECE_MAX_PAGES).toBeGreaterThan(100);
-    expect(DEFAULT_ONEPIECE_MAX_PAGES).toBeGreaterThanOrEqual(MIN_ONEPIECE_MAX_PAGES);
-    expect(onePieceMaxEvents({ })).toBeGreaterThanOrEqual(US_ONEPIECE_EVENTS);
-    expect(onePieceMaxEvents({ ONEPIECE_MAX_PAGES: "100" })).toBeGreaterThanOrEqual(US_ONEPIECE_EVENTS);
-    expect(onePieceMaxPages({ ONEPIECE_MAX_PAGES: "100" })).toBeGreaterThan(100);
+  it("covers a 30k US collect in 31 pages, not 300", () => {
+    expect(ONEPIECE_PAGE_SIZE).toBe(1000);
+    expect(MIN_ONEPIECE_MAX_PAGES).toBe(31);
+    expect(DEFAULT_ONEPIECE_MAX_PAGES).toBe(31);
+    expect(onePieceMaxEvents({})).toBeGreaterThanOrEqual(US_ONEPIECE_EVENTS);
+    expect(MIN_ONEPIECE_MAX_PAGES).toBeLessThan(300);
+    expect(onePieceMaxEvents({ ONEPIECE_MAX_PAGES: "10" })).toBeGreaterThanOrEqual(US_ONEPIECE_EVENTS);
   });
 
   it("still lets ONEPIECE_MAX_PAGES go above the US floor", () => {
-    expect(onePieceMaxPages({ ONEPIECE_MAX_PAGES: "500" })).toBe(500);
-    expect(onePieceMaxEvents({ ONEPIECE_MAX_PAGES: "500" })).toBe(50_000);
+    expect(onePieceMaxPages({ ONEPIECE_MAX_PAGES: "50" })).toBe(50);
+    expect(onePieceMaxEvents({ ONEPIECE_MAX_PAGES: "50" })).toBe(50_000);
   });
 });
