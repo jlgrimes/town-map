@@ -149,6 +149,21 @@ export function sliceByHomeChip(
   return ranked.filter((event) => startsThisWeekend(event.startsAt, now));
 }
 
+/**
+ * All ignores saved games and formats. For you (and the time chips) rank with
+ * them, so For you is not All with a different label.
+ */
+export function rankForChip(
+  events: EventListItem[],
+  chip: HomeChip,
+  ctx: RankContext,
+): EventListItem[] {
+  const rankCtx: RankContext = chip === "all"
+    ? { ...ctx, selectedGames: [], formatFilter: "all" }
+    : ctx;
+  return sliceByHomeChip(rankEvents(events, rankCtx), chip, ctx.now);
+}
+
 function bySoonestStart(a: EventListItem, b: EventListItem): number {
   const diff = Date.parse(a.startsAt) - Date.parse(b.startsAt);
   if (diff !== 0) return diff;

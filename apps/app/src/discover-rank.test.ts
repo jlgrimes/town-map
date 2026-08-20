@@ -10,6 +10,7 @@ import {
   distanceFactor,
   gameFormatFactor,
   rankEvents,
+  rankForChip,
   registrationHref,
   scoreEvent,
   sliceByHomeChip,
@@ -166,7 +167,12 @@ describe("time chips slice the ranked list", () => {
       "thu",
       "mon",
     ]);
-    expect(sliceByHomeChip(ranked, "for-you", thursday)).toEqual(sliceByHomeChip(ranked, "all", thursday));
+    expect(sliceByHomeChip(ranked, "for-you", thursday).map((row) => row.id)).toEqual([
+      "fri",
+      "sat",
+      "thu",
+      "mon",
+    ]);
   });
 
   it("Today keeps starts that land on the local calendar day", () => {
@@ -186,6 +192,56 @@ describe("time chips slice the ranked list", () => {
       "fri",
       "sat",
     ]);
+  });
+});
+
+describe("All is not For you", () => {
+  const soon = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+  const savedMagic = event({ id: "magic-saved", game: "magic", distanceMiles: 10, startsAt: soon });
+  const otherYgo = event({ id: "ygo-near", game: "yugioh", distanceMiles: 1, startsAt: soon });
+
+  it("fails if For you is All with a different label when games are saved", () => {
+    const withGames = ctx({ selectedGames: ["magic"] });
+    const allIds = rankForChip([savedMagic, otherYgo], "all", withGames).map((row) => row.id);
+    const forYouIds = rankForChip([savedMagic, otherYgo], "for-you", withGames).map((row) => row.id);
+    expect(allIds).toEqual(["ygo-near", "magic-saved"]);
+    expect(forYouIds).not.toEqual(allIds);
+    expect(forYouIds[0]).toBe("magic-saved");
+  });
+
+  it("fails if For you is All with a different label when a format is saved", () => {
+    const commander = event({
+      id: "commander",
+      game: "magic",
+      format: "commander",
+      distanceMiles: 10,
+      startsAt: soon,
+    });
+    const standard = event({
+      id: "standard",
+      game: "magic",
+      format: "standard",
+      distanceMiles: 1,
+      startsAt: soon,
+    });
+    const withFormat = ctx({ selectedGames: ["magic"], formatFilter: "commander" });
+    const allIds = rankForChip([commander, standard], "all", withFormat).map((row) => row.id);
+    const forYouIds = rankForChip([commander, standard], "for-you", withFormat).map((row) => row.id);
+    expect(allIds).toEqual(["standard", "commander"]);
+    expect(forYouIds).not.toEqual(allIds);
+    expect(forYouIds[0]).toBe("commander");
+  });
+
+  it("All and For you match when nothing is saved", () => {
+    expect(rankForChip([savedMagic, otherYgo], "all", ctx()).map((row) => row.id)).toEqual(
+      rankForChip([savedMagic, otherYgo], "for-you", ctx()).map((row) => row.id),
+    );
+  });
+
+  it("documents the one ranked list All === For you shape the lock forbids", () => {
+    const withGames = ctx({ selectedGames: ["magic"] });
+    const rankedOnce = rankEvents([savedMagic, otherYgo], withGames);
+    expect(sliceByHomeChip(rankedOnce, "for-you", now)).toEqual(sliceByHomeChip(rankedOnce, "all", now));
   });
 });
 
