@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { clerkClient, clerkPlugin, getAuth } from "@clerk/fastify";
 import { EventIdSchema, EventQuerySchema, UserPreferencesUpdateSchema, type GameRegistry } from "@town-map/contracts";
+import { eventsWithPlayerFormats, savedEventsWithPlayerFormats } from "./player-format.js";
 import {
   closePool,
   getPool,
@@ -24,7 +25,6 @@ import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, ty
 export async function createApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
-      // Session tokens and cookies must never reach the log sink.
       redact: ["req.headers.authorization", "req.headers.cookie", "req.headers['set-cookie']"],
     },
   });
@@ -55,27 +55,17 @@ export async function createApp(): Promise<FastifyInstance> {
     },
   });
 
-  // Counted per process, so the effective ceiling is this multiplied by the replica
-  // count. Swap in the plugin's Redis store once the API runs more than one
-  // instance and the limit needs to be exact.
   await app.register(rateLimit, {
     global: true,
     max: Number(process.env.RATE_LIMIT_MAX ?? 300),
     timeWindow: process.env.RATE_LIMIT_WINDOW ?? "1 minute",
-    // Health checks come from the platform and must never be throttled.
     allowList: (request) => request.url === "/health",
   });
 
-  /** Endpoints doing upstream or scan-heavy work get a tighter ceiling. */
   function rateLimited(max: number) {
     return { rateLimit: { max, timeWindow: process.env.RATE_LIMIT_WINDOW ?? "1 minute" } };
   }
 
-  /**
-   * Cached responses are per-URL and identical for every caller, so a shared cache
-   * is safe. Authenticated routes opt out explicitly instead of relying on this
-   * default not being applied.
-   */
   function publicCache(seconds: number, staleWhileRevalidateSeconds = seconds * 5) {
     return `public, max-age=${seconds}, stale-while-revalidate=${staleWhileRevalidateSeconds}`;
   }
@@ -100,8 +90,6 @@ export async function createApp(): Promise<FastifyInstance> {
     return auth.userId;
   }
 
-  // Reported by /health so "which code is actually running?" is answerable with
-  // one request. Railway injects the first of these; the others are fallbacks.
   const revision = process.env.RAILWAY_GIT_COMMIT_SHA
     ?? process.env.GIT_COMMIT_SHA
     ?? process.env.SOURCE_COMMIT
@@ -121,10 +109,6 @@ export async function createApp(): Promise<FastifyInstance> {
     }
   });
 
-  /**
-   * The taxonomy changes only when a row is written, so it is held briefly in
-   * process rather than read on every event query that filters by category.
-   */
   const registryTtlMs = Number(process.env.GAME_REGISTRY_TTL_MS ?? 300_000);
   let registryCache: { expiresAt: number; value: GameRegistry } | undefined;
 
@@ -149,7 +133,6 @@ export async function createApp(): Promise<FastifyInstance> {
       reply.header("Cache-Control", "no-store");
       return reply.code(503).send({ error: "The event database is not configured." });
     }
-    // Collectors refresh the underlying snapshot hourly at most.
     reply.header("Cache-Control", publicCache(60));
     return listCoverage();
   });
@@ -205,8 +188,6 @@ export async function createApp(): Promise<FastifyInstance> {
     }
   }
 
-  // Every request here can reach the upstream geocoder, which is rate limited by
-  // its operator and serialised to one request per second inside this process.
   app.get<{ Querystring: { q?: string } }>("/v1/geocode", {
     config: rateLimited(Number(process.env.RATE_LIMIT_GEOCODE_MAX ?? 20)),
   }, async (request, reply) => {
@@ -216,7 +197,6 @@ export async function createApp(): Promise<FastifyInstance> {
     try {
       const result = await geocodePlace(query);
       if (!result) return reply.code(404).send({ error: "Place not found." });
-      // Place coordinates are stable; this mirrors the in-process cache lifetime.
       reply.header("Cache-Control", publicCache(86_400));
       return result;
     } catch (error) {
@@ -226,7 +206,6 @@ export async function createApp(): Promise<FastifyInstance> {
   });
 
   app.get("/v1/preferences", async (request, reply) => {
-    // Per-user and authenticated: never store this in a shared or browser cache.
     reply.header("Cache-Control", "no-store");
     const userId = authenticatedUserId(request, reply);
     if (!userId) return;
@@ -247,16 +226,11 @@ export async function createApp(): Promise<FastifyInstance> {
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid preferences", details: parsed.error.flatten() });
     }
-    // The schema only checks slug shape now, so existence is checked against the
-    // registry. Without this a typo would be stored and silently match nothing.
     const knownGames = new Set((await gameRegistry()).games.map((game) => game.id));
     const unknownGames = parsed.data.selectedGames.filter((game) => !knownGames.has(game));
     if (unknownGames.length) {
       return reply.code(400).send({ error: `Unknown game: ${unknownGames.join(", ")}` });
     }
-    // PostgreSQL is the source of truth, so it is written first. Mirroring to Clerk
-    // afterwards can fail without leaving onboarding marked complete against no
-    // stored preferences; the next save reconciles it.
     const preferences = await saveUserPreferences(userId, parsed.data.homeAddress, parsed.data.selectedGames);
     try {
       await clerkClient.users.updateUserMetadata(userId, {
@@ -271,10 +245,6 @@ export async function createApp(): Promise<FastifyInstance> {
     return preferences;
   });
 
-  /**
-   * The saved list is small and personal, so it is served whole rather than
-   * cursored, and never cached anywhere shared.
-   */
   app.get("/v1/saved-events", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     const userId = authenticatedUserId(request, reply);
@@ -282,11 +252,9 @@ export async function createApp(): Promise<FastifyInstance> {
     if (!process.env.DATABASE_URL) {
       return reply.code(503).send({ error: "The event database is not configured." });
     }
-    return listSavedEvents(userId);
+    return savedEventsWithPlayerFormats(await listSavedEvents(userId));
   });
 
-  // PUT rather than POST: saving an event the user has already saved is the same
-  // request twice, and must not be an error the second time.
   app.put<{ Params: { eventId: string } }>("/v1/saved-events/:eventId", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     const userId = authenticatedUserId(request, reply);
@@ -296,8 +264,6 @@ export async function createApp(): Promise<FastifyInstance> {
     if (!process.env.DATABASE_URL) {
       return reply.code(503).send({ error: "The event database is not configured." });
     }
-    // A save can race a collector withdrawing the event, and an id from a stale
-    // client page is the ordinary case rather than a broken one.
     if (!await saveEvent(userId, eventId.data)) {
       return reply.code(404).send({ error: "That event is no longer available." });
     }
@@ -320,8 +286,6 @@ export async function createApp(): Promise<FastifyInstance> {
   app.get<{ Querystring: Record<string, string | undefined> }>("/v1/events", async (request, reply) => {
     const games = request.query.games?.split(",").filter(Boolean) ?? [];
     const categories = request.query.categories?.split(",").filter(Boolean) ?? [];
-    // `?latitude=` must mean "not supplied". Left in place it coerces to 0, which
-    // is a valid latitude, and the search silently runs off the coast of Africa.
     const supplied = Object.fromEntries(
       Object.entries(request.query).filter(([, value]) => value !== undefined && value !== ""),
     );
@@ -345,15 +309,12 @@ export async function createApp(): Promise<FastifyInstance> {
         return reply.code(400).send({ error: `Unknown game or category: ${unknown.join(", ")}` });
       }
 
-      // Categories are expanded here so the event query only ever filters on
-      // `game` and never joins the taxonomy tables.
       const selectedGames = [...new Set([
         ...parsed.data.games,
         ...registry.games
           .filter((game) => parsed.data.categories.includes(game.category))
           .map((game) => game.id),
       ])];
-      // A filter that resolves to nothing means no results, not every result.
       if ((parsed.data.games.length || parsed.data.categories.length) && !selectedGames.length) {
         reply.header("Cache-Control", publicCache(60));
         return { events: [], count: 0, nextCursor: null };
@@ -361,11 +322,8 @@ export async function createApp(): Promise<FastifyInstance> {
 
       const { categories: _expanded, ...lookup } = parsed.data;
       const page = await listEvents({ ...lookup, games: selectedGames });
-      // Collectors write hourly at most, and a query with no explicit `from` is
-      // relative to now, so a short window keeps results current while still
-      // absorbing the repeated requests a map pan produces.
       reply.header("Cache-Control", publicCache(60));
-      return page;
+      return eventsWithPlayerFormats(page);
     } catch (error) {
       if (error instanceof InvalidEventCursorError) {
         return reply.code(400).send({ error: error.message });
@@ -378,17 +336,13 @@ export async function createApp(): Promise<FastifyInstance> {
 
   app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
     const status = error.statusCode ?? 500;
-    // Errors short-circuit the handlers that would have set this, and a cached
-    // rate-limit or failure response would outlive the condition that caused it.
     reply.header("Cache-Control", "no-store");
     if (status >= 500) {
-      // The single place an error-tracking client would be notified from.
       request.log.error({ err: error, requestId: request.id }, "Unhandled request error");
       return reply.code(status).send({ error: "Something went wrong.", requestId: request.id });
     }
     return reply.code(status).send({ error: error.message });
   });
-
 
   return app;
 }
