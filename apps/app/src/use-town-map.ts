@@ -377,7 +377,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     try {
       const permission = await Geolocation.requestPermissions();
       if (permission.location === "denied") {
-        setLocationNotice("Location access was denied. Enter a city or ZIP code instead.");
+        setLocationNotice("Enter a city or ZIP code instead.");
         return;
       }
       const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 12_000 });
@@ -386,7 +386,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
       setPlaceQuery("Current location");
       setLocationResolved(true);
     } catch {
-      setLocationNotice("We could not access your location. Enter a city or ZIP code instead.");
+      setLocationNotice("Enter a city or ZIP code instead.");
     } finally {
       setLocationStatus("idle");
     }
