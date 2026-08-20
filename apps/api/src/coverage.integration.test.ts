@@ -18,6 +18,7 @@ let client: Client;
 
 const YGO = "konami-kcgn";
 const RIFTBOUND = "riftbound-locator";
+const ONE_PIECE = "bandai-tcg-plus";
 
 const nationalYgo = [
   { key: "US:IL", label: "Illinois", countryCode: "US", config: { stateCode: "IL" } },
@@ -29,6 +30,14 @@ const nationalRiftbound = [
   { key: "us-il-chicago", label: "Chicago, IL", countryCode: "US", config: { latitude: 41.8781, longitude: -87.6298 } },
   { key: "us-ca-la", label: "Los Angeles, CA", countryCode: "US", config: { latitude: 34.0522, longitude: -118.2437 } },
   { key: "us-ny-nyc", label: "New York, NY", countryCode: "US", config: { latitude: 40.7128, longitude: -74.006 } },
+];
+
+const illinoisOnePiece = [
+  { key: "US:US-IL", label: "United States — IL", countryCode: "US", config: { countryCode: "US", prefCodes: ["US-IL"] } },
+];
+
+const nationalOnePiece = [
+  { key: "US", label: "United States", countryCode: "US", config: { countryCode: "US" } },
 ];
 
 async function getCoverage() {
@@ -43,6 +52,10 @@ function sourceCoverage(body: CoverageResponse, source: string): CoverageSource 
 
 function uniqueRegionKeys(body: CoverageResponse, source: string) {
   return [...new Set(body.regions.filter((region) => region.source === source).map((region) => region.key))].sort();
+}
+
+function regionLabels(body: CoverageResponse, source: string) {
+  return body.regions.filter((region) => region.source === source).map((region) => region.label);
 }
 
 integration("/v1/coverage live path", () => {
@@ -107,5 +120,33 @@ integration("/v1/coverage live path", () => {
     const riftbound = sourceCoverage(body, RIFTBOUND);
     expect(riftbound.totalRegions).toBe(1);
     expect(riftbound.enabledRegions).toBe(1);
+  });
+
+  it("fails if One Piece coverage is still Illinois", async () => {
+    await registerCollectionRegions(ONE_PIECE, nationalOnePiece, client);
+
+    const response = await getCoverage();
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as CoverageResponse;
+
+    const coverage = sourceCoverage(body, ONE_PIECE);
+    expect(coverage.enabledRegions).toBeGreaterThan(0);
+    expect(uniqueRegionKeys(body, ONE_PIECE)).not.toEqual(["US:US-IL"]);
+    expect(regionLabels(body, ONE_PIECE).some((label) => /Illinois/i.test(label))).toBe(false);
+    expect(body.regions.filter((region) => region.source === ONE_PIECE).every((region) => region.countryCode === "US")).toBe(true);
+  });
+
+  it("documents the Illinois-only One Piece shape the lock forbids", async () => {
+    await registerCollectionRegions(ONE_PIECE, illinoisOnePiece, client);
+
+    const response = await getCoverage();
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as CoverageResponse;
+
+    const coverage = sourceCoverage(body, ONE_PIECE);
+    expect(coverage.totalRegions).toBe(1);
+    expect(coverage.enabledRegions).toBe(1);
+    expect(uniqueRegionKeys(body, ONE_PIECE)).toEqual(["US:US-IL"]);
+    expect(regionLabels(body, ONE_PIECE).some((label) => /\bIL\b/.test(label))).toBe(true);
   });
 });
