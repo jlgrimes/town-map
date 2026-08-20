@@ -15,6 +15,7 @@ import { Typography } from "@/components/ui/typography";
 import { EventRow } from "@/components/ui/event-row";
 import { FilterBar, type FilterBarValue } from "@/components/filters/filter-bar";
 import { GamePills } from "@/components/filters/game-pills";
+import { FormatPills, magicIsOn, type FormatFilter } from "@/components/filters/format-pills";
 import { CircleAlert, Home, LocateFixed, MapPin, RefreshCw, Search, X } from "lucide-react";
 import { lazy, Suspense, type FormEvent } from "react";
 import type { EventListItem, Game } from "@town-map/contracts";
@@ -28,6 +29,8 @@ export type DiscoverPanelProps = {
   catalog: GameCatalog;
   selectedGames: Game[];
   setSelectedGames: (games: Game[] | null) => void;
+  formatFilter: FormatFilter;
+  setFormatFilter: (next: FormatFilter) => void;
   placeQuery: string;
   setPlaceQuery: (value: string) => void;
   searchPlace: (event: FormEvent<HTMLFormElement>) => void;
@@ -64,7 +67,7 @@ export type DiscoverPanelProps = {
 
 export function DiscoverPanel(p: DiscoverPanelProps) {
   const {
-    catalog, selectedGames, setSelectedGames, placeQuery, setPlaceQuery, searchPlace,
+    catalog, selectedGames, setSelectedGames, formatFilter, setFormatFilter, placeQuery, setPlaceQuery, searchPlace,
     locationStatus, useCurrentLocation, authSignedIn, homeAddress, resetToSavedHome,
     filterValue, handleFilterChange, defaultGames, visibleEvents, locationNotice,
     locationResolved, locationLabel, status, location, mappableEvents, activeEventId,
@@ -81,6 +84,12 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                       selected={selectedGames}
                       onChange={setSelectedGames}
                     />
+                    {magicIsOn(selectedGames) && (
+                      <FormatPills
+                        selected={formatFilter}
+                        onChange={setFormatFilter}
+                      />
+                    )}
                     <SpotlightSearch className="w-full">
                       <form onSubmit={searchPlace} className="flex flex-wrap items-center gap-2">
                         <div className="relative min-w-0 flex-1">
@@ -111,7 +120,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-1 text-xs text-muted-foreground hover:text-foreground"
+                        className="h-7 px-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                         onClick={resetToSavedHome}
                         disabled={locationStatus === "searching"}
                       >
@@ -119,7 +128,6 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                         Use saved home ({homeAddress})
                       </Button>
                     )}
-
                     <FilterBar
                       className="mt-1"
                       value={filterValue}

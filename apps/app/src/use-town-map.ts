@@ -20,6 +20,12 @@ import {
   type PriceFilter,
 } from "@/components/filters/filter-bar";
 import {
+  initialFormat,
+  magicIsOn,
+  matchesFormat,
+  type FormatFilter,
+} from "@/components/filters/format-pills";
+import {
   PAGE_SIZE,
   guestAuth,
   type AppAuth,
@@ -73,6 +79,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
   const [placeQuery, setPlaceQuery] = useState(initialParams.get("place") ?? "");
   const [radiusMiles, setRadiusMiles] = useState(initialNumber(initialParams, "radius", DEFAULT_RADIUS_MILES));
   const [priceFilter, setPriceFilter] = useState<PriceFilter>(initialPriceFilter(initialParams));
+  const [formatFilter, setFormatFilter] = useState<FormatFilter>(initialFormat(initialParams));
   const [status, setStatus] = useState<"loading" | "live" | "preview" | "error">("loading");
   const [locationStatus, setLocationStatus] = useState<"idle" | "searching" | "locating">("idle");
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
@@ -300,6 +307,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     if (selectedGames.length > 0) params.set("games", selectedGames.join(","));
     if (dateFilter !== "today") params.set("date", dateFilter);
     if (priceFilter !== "all") params.set("price", priceFilter);
+    if (formatFilter !== "all") params.set("format", formatFilter);
     if (locationResolved) {
       params.set("lat", location.latitude.toFixed(5));
       params.set("lng", location.longitude.toFixed(5));
@@ -308,13 +316,17 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     params.set("radius", String(radiusMiles));
     const nextUrl = `${window.location.pathname}?${params}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [dateFilter, location, locationLabel, locationResolved, priceFilter, radiusMiles, selectedGames]);
+  }, [dateFilter, formatFilter, location, locationLabel, locationResolved, priceFilter, radiusMiles, selectedGames]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
     setSelectedEventId(null);
     setHighlightedEventId(null);
-  }, [dateFilter, priceFilter, radiusMiles, selectedGames]);
+  }, [dateFilter, formatFilter, priceFilter, radiusMiles, selectedGames]);
+
+  useEffect(() => {
+    if (!magicIsOn(selectedGames) && formatFilter !== "all") setFormatFilter("all");
+  }, [formatFilter, selectedGames]);
 
   // The date and price filters are derived from data already on screen; the
   // location and radius are what the API request itself is scoped to.
@@ -322,9 +334,10 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     const filtered = events.filter((event) =>
       (selectedGames.length === 0 || selectedGames.includes(event.game)) &&
       matchesDate(event, dateFilter) &&
-      matchesPrice(event, priceFilter));
+      matchesPrice(event, priceFilter) &&
+      (formatFilter === "all" || (event.game === "magic" && matchesFormat(event.format, formatFilter))));
     return sortEvents(filtered);
-  }, [dateFilter, events, priceFilter, selectedGames]);
+  }, [dateFilter, events, formatFilter, priceFilter, selectedGames]);
 
   const defaultGames = useMemo(
     () => (auth.signedIn && accountGames.length > 0 ? accountGames : []),
@@ -507,7 +520,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     dateFilter, setDateFilter, urlHasLocation, location, locationLabel, locationResolved,
     homeAddress, homeDraft, setHomeDraft, preferenceGamesDraft, setPreferenceGamesDraft,
     onboardingCompleted, preferencesReady, homeNotice, preferenceStatus, placeQuery, setPlaceQuery,
-    radiusMiles, priceFilter, status, locationStatus, locationNotice, visibleCount, setVisibleCount,
+    radiusMiles, priceFilter, formatFilter, setFormatFilter, status, locationStatus, locationNotice, visibleCount, setVisibleCount,
     selectedEventId, expandedEventId, setExpandedEventId, expandedLayoutIdPrefix, highlightedEventId, setHighlightedEventId,
     tab, setTab, savedUpcoming, savedPast, savedStatus, savedNotice, setSavedReloadKey,
     savedEvents, expandedEvent, canSave, savedIds, toggleSaved, searchPlace, useCurrentLocation,
