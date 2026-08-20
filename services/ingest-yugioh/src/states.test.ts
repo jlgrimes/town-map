@@ -37,6 +37,13 @@ describe("getStates", () => {
     expect(getStates().map((state) => state.code)).toContain("CA");
     expect(getStates().map((state) => state.code)).toContain("TX");
   });
+
+  it("fails if YGO is still one region", () => {
+    process.env.YUGIOH_STATES = "IL";
+    const codes = [...new Set(getStates().map((state) => state.code))];
+    expect(codes.length).toBeGreaterThan(1);
+    expect(codes).not.toEqual(["IL"]);
+  });
 });
 
 describe("parseStates", () => {
