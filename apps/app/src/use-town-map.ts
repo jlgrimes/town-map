@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -28,6 +29,7 @@ import {
 import {
   PAGE_SIZE,
   guestAuth,
+  locatePath,
   type AppAuth,
   type Tab,
   initialGames,
@@ -389,25 +391,52 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     }
   }
 
-  const useCurrentLocation = useCallback(async () => {
+  const useCurrentLocation = useCallback(() => {
     setLocationStatus("locating");
     setLocationNotice(null);
-    try {
-      const permission = await Geolocation.requestPermissions();
-      if (permission.location === "denied") {
-        setLocationNotice("Enter a city or ZIP code instead.");
-        return;
-      }
-      const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 12_000 });
-      setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+
+    const applyPosition = (latitude: number, longitude: number) => {
+      setLocation({ latitude, longitude });
       setLocationLabel("Current location");
       setPlaceQuery("Current location");
       setLocationResolved(true);
-    } catch {
-      setLocationNotice("Enter a city or ZIP code instead.");
-    } finally {
       setLocationStatus("idle");
+    };
+    const fail = () => {
+      setLocationNotice("Enter a city or ZIP code instead.");
+      setLocationStatus("idle");
+    };
+
+    if (locatePath(Capacitor.isNativePlatform()) === "native") {
+      void (async () => {
+        try {
+          const permission = await Geolocation.requestPermissions();
+          if (permission.location === "denied") {
+            fail();
+            return;
+          }
+          const position = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: false,
+            timeout: 12_000,
+          });
+          applyPosition(position.coords.latitude, position.coords.longitude);
+        } catch {
+          fail();
+        }
+      })();
+      return;
     }
+
+    if (!navigator.geolocation) {
+      fail();
+      return;
+    }
+    // Must run in this tick. Awaiting Capacitor permissions first drops Safari's prompt.
+    navigator.geolocation.getCurrentPosition(
+      (position) => applyPosition(position.coords.latitude, position.coords.longitude),
+      () => fail(),
+      { enableHighAccuracy: false, timeout: 12_000 },
+    );
   }, []);
 
 
