@@ -21,7 +21,7 @@ import { lazy, Suspense, type FormEvent } from "react";
 import type { EventListItem, Game } from "@town-map/contracts";
 import type { GameCatalog } from "./games";
 import { LoadingCards } from "./account-chrome";
-import { PAGE_SIZE } from "./town-map-model";
+import { FIRST_PAINT_PLACE_ASK, PAGE_SIZE, discoverFirstPaint } from "./town-map-model";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -158,7 +158,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
     />
   );
 
-  if (!locationResolved) {
+  if (discoverFirstPaint(locationResolved) === "place-ask") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <section aria-label="Game filters" className="shrink-0 space-y-2 pb-2">
@@ -175,12 +175,12 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
               <EmptyHeader>
                 <EmptyMedia variant="icon"><MapPin /></EmptyMedia>
                 <EmptyTitle className="text-lg">
-                  {locationStatus === "locating" ? "Finding you…" : "Where should we look?"}
+                  {locationStatus === "locating" ? "Finding you…" : FIRST_PAINT_PLACE_ASK.title}
                 </EmptyTitle>
                 <EmptyDescription>
                   {locationStatus === "locating"
                     ? "We’ll drop pins once we have a spot."
-                    : "Search a city, ZIP, or address to see tonight."}
+                    : FIRST_PAINT_PLACE_ASK.description}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="max-w-lg">
