@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { matchesFormat, nextFormatSelection } from "./format-pills";
+import {
+  MAGIC_FORMAT_CHIPS,
+  formatChipsForEvents,
+  matchesFormat,
+  nextFormatSelection,
+  playerFormat,
+} from "./format-pills";
 
 describe("nextFormatSelection", () => {
   it("picks one format from All", () => {
@@ -19,6 +25,35 @@ describe("nextFormatSelection", () => {
   });
 });
 
+describe("playerFormat", () => {
+  it("Standard in the title lands on the Standard chip", () => {
+    expect(playerFormat("Constructed", "Friday Night Magic Standard")).toBe("standard");
+    expect(matchesFormat("Constructed", "standard", "Friday Night Magic Standard")).toBe(true);
+    expect(MAGIC_FORMAT_CHIPS.some((chip) => chip.value === "standard" && chip.label === "Standard")).toBe(true);
+    expect(
+      formatChipsForEvents([{ format: "Constructed", title: "Friday Night Magic Standard" }]).some(
+        (chip) => chip.label === "Standard",
+      ),
+    ).toBe(true);
+  });
+
+  it("derives Modern and Pioneer from the title when WPN says Constructed", () => {
+    expect(playerFormat("Constructed", "Modern FNM")).toBe("modern");
+    expect(playerFormat("Constructed", "Pioneer Challenge")).toBe("pioneer");
+  });
+
+  it("does not ship Constructed as a chip", () => {
+    expect(MAGIC_FORMAT_CHIPS.some((chip) => chip.value === "constructed" || chip.label === "Constructed")).toBe(false);
+    expect(playerFormat("Constructed", "Friday Night Magic")).toBeNull();
+  });
+
+  it("keeps Commander, Draft, and Sealed from the payload format", () => {
+    expect(playerFormat("Commander", "Commander Night")).toBe("commander");
+    expect(playerFormat("Booster Draft", "Friday Night Magic")).toBe("draft");
+    expect(playerFormat("Sealed", "Prerelease")).toBe("sealed");
+  });
+});
+
 describe("matchesFormat", () => {
   it("All keeps every row, including a missing format", () => {
     expect(matchesFormat("Commander", "all")).toBe(true);
@@ -28,12 +63,6 @@ describe("matchesFormat", () => {
   it("Draft matches live WPN Booster Draft labels", () => {
     expect(matchesFormat("Booster Draft", "draft")).toBe(true);
     expect(matchesFormat("booster_draft", "draft")).toBe(true);
-  });
-
-  it("matches live WPN Commander, Constructed, and Sealed labels", () => {
-    expect(matchesFormat("Commander", "commander")).toBe(true);
-    expect(matchesFormat("Constructed", "constructed")).toBe(true);
-    expect(matchesFormat("Sealed", "sealed")).toBe(true);
   });
 
   it("Commander is not Draft", () => {
