@@ -1,6 +1,7 @@
 import type { NormalizedEvent } from "@town-map/contracts";
 import { normalizeAll, runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
 import { normalizeOnePieceEvent, type BandaiEvent } from "./normalize.js";
+import { DEFAULT_ONEPIECE_MAX_PAGES, DEFAULT_ONEPIECE_PAGE_SIZE } from "./paging.js";
 import { getRegions, type OnePieceRegion } from "./regions.js";
 
 const ENDPOINT = "https://api.bandai-tcg-plus.com/api/user/event/list";
@@ -61,8 +62,8 @@ export async function collectOnePieceRegion(region: OnePieceRegion): Promise<Nor
   startDate.setUTCDate(startDate.getUTCDate() - 1);
   const endDate = new Date(today);
   endDate.setUTCDate(endDate.getUTCDate() + Number(process.env.ONEPIECE_LOOKAHEAD_DAYS ?? 90) + 1);
-  const pageSize = 100;
-  const maxPages = Number(process.env.ONEPIECE_MAX_PAGES ?? 100);
+  const pageSize = Number(process.env.ONEPIECE_PAGE_SIZE ?? DEFAULT_ONEPIECE_PAGE_SIZE);
+  const maxPages = Number(process.env.ONEPIECE_MAX_PAGES ?? DEFAULT_ONEPIECE_MAX_PAGES);
   const unique = new Map<string, NormalizedEvent>();
 
   for (let page = 0; page < maxPages; page += 1) {
