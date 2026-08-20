@@ -1,20 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   LocateDeniedError,
   LOCATE_POSITION_OPTIONS,
   readCurrentPosition,
   shouldRequestNativeLocationPermission,
+  type LocateGeo,
 } from "./locate";
 import { shouldAutoLocateOnFirstLoad } from "./town-map-model";
 
-function geo(overrides: {
-  requestPermissions?: ReturnType<typeof vi.fn>;
-  getCurrentPosition?: ReturnType<typeof vi.fn>;
-} = {}) {
+function geo(overrides: Partial<LocateGeo> = {}): LocateGeo {
   return {
-    requestPermissions: overrides.requestPermissions ?? vi.fn().mockResolvedValue({ location: "granted" }),
+    requestPermissions: overrides.requestPermissions
+      ?? (async () => ({ location: "granted" })),
     getCurrentPosition: overrides.getCurrentPosition
-      ?? vi.fn().mockResolvedValue({ coords: { latitude: 41.88, longitude: -87.63 } }),
+      ?? (async () => ({ coords: { latitude: 41.88, longitude: -87.63 } })),
   };
 }
 
@@ -25,12 +24,23 @@ describe("Locate tap", () => {
 
   it("does not request Capacitor permissions on web so Safari can prompt from the tap", async () => {
     expect(shouldRequestNativeLocationPermission(false)).toBe(false);
-    const requestPermissions = vi.fn();
-    const getCurrentPosition = vi.fn().mockResolvedValue({ coords: { latitude: 41.88, longitude: -87.63 } });
-    const position = await readCurrentPosition(geo({ requestPermissions, getCurrentPosition }), false);
-    expect(requestPermissions).not.toHaveBeenCalled();
-    expect(getCurrentPosition).toHaveBeenCalledOnce();
-    expect(getCurrentPosition).toHaveBeenCalledWith(LOCATE_POSITION_OPTIONS);
+    let requested = 0;
+    let got = 0;
+    let options: unknown;
+    const position = await readCurrentPosition(geo({
+      requestPermissions: async () => {
+        requested += 1;
+        return { location: "granted" };
+      },
+      getCurrentPosition: async (next) => {
+        got += 1;
+        options = next;
+        return { coords: { latitude: 41.88, longitude: -87.63 } };
+      },
+    }), false);
+    expect(requested).toBe(0);
+    expect(got).toBe(1);
+    expect(options).toEqual(LOCATE_POSITION_OPTIONS);
     expect(position.coords.latitude).toBe(41.88);
   });
 
@@ -40,21 +50,29 @@ describe("Locate tap", () => {
 
   it("requests native permissions on Capacitor iOS/Android before reading position", async () => {
     expect(shouldRequestNativeLocationPermission(true)).toBe(true);
-    const requestPermissions = vi.fn().mockResolvedValue({ location: "granted" });
-    const getCurrentPosition = vi.fn().mockResolvedValue({ coords: { latitude: 1, longitude: 2 } });
-    await readCurrentPosition(geo({ requestPermissions, getCurrentPosition }), true);
-    expect(requestPermissions).toHaveBeenCalledOnce();
-    expect(getCurrentPosition).toHaveBeenCalledOnce();
-    expect(requestPermissions.mock.invocationCallOrder[0]).toBeLessThan(
-      getCurrentPosition.mock.invocationCallOrder[0],
-    );
+    const order: string[] = [];
+    await readCurrentPosition(geo({
+      requestPermissions: async () => {
+        order.push("request");
+        return { location: "granted" };
+      },
+      getCurrentPosition: async () => {
+        order.push("position");
+        return { coords: { latitude: 1, longitude: 2 } };
+      },
+    }), true);
+    expect(order).toEqual(["request", "position"]);
   });
 
   it("stops on native deny without calling getCurrentPosition", async () => {
-    const requestPermissions = vi.fn().mockResolvedValue({ location: "denied" });
-    const getCurrentPosition = vi.fn();
-    await expect(readCurrentPosition(geo({ requestPermissions, getCurrentPosition }), true))
-      .rejects.toBeInstanceOf(LocateDeniedError);
-    expect(getCurrentPosition).not.toHaveBeenCalled();
+    let got = 0;
+    await expect(readCurrentPosition(geo({
+      requestPermissions: async () => ({ location: "denied" }),
+      getCurrentPosition: async () => {
+        got += 1;
+        return { coords: { latitude: 0, longitude: 0 } };
+      },
+    }), true)).rejects.toBeInstanceOf(LocateDeniedError);
+    expect(got).toBe(0);
   });
 });
