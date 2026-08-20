@@ -43,6 +43,17 @@ export function shouldAutoLocateOnFirstLoad() {
   return false;
 }
 
+export type LocatePath = "browser" | "native";
+
+/**
+ * iOS Safari only shows the geolocation prompt from a user gesture.
+ * Awaiting Capacitor.requestPermissions() before getCurrentPosition drops that
+ * gesture on web. Native can still request permissions first.
+ */
+export function locatePath(isNativePlatform: boolean): LocatePath {
+  return isNativePlatform ? "native" : "browser";
+}
+
 export type DiscoverFirstPaint = "place-ask" | "map";
 
 /** First load without a place is the city/ZIP ask. An empty map is not a first screen. */
