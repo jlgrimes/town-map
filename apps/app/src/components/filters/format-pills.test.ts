@@ -47,6 +47,15 @@ describe("playerFormat", () => {
     expect(playerFormat("Constructed", "Friday Night Magic")).toBeNull();
   });
 
+  it("hides a chip if that night has none", () => {
+    const chips = formatChipsForEvents([
+      { format: "Commander", title: "Commander Night" },
+      { format: "Constructed", title: "Friday Night Magic Standard" },
+    ]);
+    expect(chips.map((chip) => chip.label)).toEqual(["All formats", "Commander", "Standard"]);
+    expect(chips.map((chip) => chip.label)).not.toContain("Pioneer");
+  });
+
   it("keeps Commander, Draft, and Sealed from the payload format", () => {
     expect(playerFormat("Commander", "Commander Night")).toBe("commander");
     expect(playerFormat("Booster Draft", "Friday Night Magic")).toBe("draft");
