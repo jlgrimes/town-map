@@ -1,7 +1,7 @@
-import { registerCollectionRegions } from "@town-map/db";
-import type { CoverageResponse } from "@town-map/contracts";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CoverageResponse, CoverageSource } from "@town-map/contracts";
+import { registerCollectionRegions } from "@town-map/db";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const integration = connectionString ? describe : describe.skip;
@@ -16,15 +16,33 @@ vi.mock("@clerk/fastify", () => ({
 let app: Awaited<ReturnType<typeof import("./app.js").createApp>>;
 let client: Client;
 
-const YGO_SOURCE = "konami-kcgn";
-const RIFTBOUND_SOURCE = "riftbound-locator";
+const YGO = "konami-kcgn";
+const RIFTBOUND = "riftbound-locator";
 
-function sourceCoverage(body: CoverageResponse, source: string) {
-  return body.sources.find((entry) => entry.source === source);
+const nationalYgo = [
+  { key: "US:IL", label: "Illinois", countryCode: "US", config: { stateCode: "IL" } },
+  { key: "US:CA", label: "California", countryCode: "US", config: { stateCode: "CA" } },
+  { key: "US:NY", label: "New York", countryCode: "US", config: { stateCode: "NY" } },
+];
+
+const nationalRiftbound = [
+  { key: "us-il-chicago", label: "Chicago, IL", countryCode: "US", config: { latitude: 41.8781, longitude: -87.6298 } },
+  { key: "us-ca-la", label: "Los Angeles, CA", countryCode: "US", config: { latitude: 34.0522, longitude: -118.2437 } },
+  { key: "us-ny-nyc", label: "New York, NY", countryCode: "US", config: { latitude: 40.7128, longitude: -74.006 } },
+];
+
+async function getCoverage() {
+  return app.inject({ method: "GET", url: "/v1/coverage" });
 }
 
-function regionKeys(body: CoverageResponse, source: string) {
-  return body.regions.filter((region) => region.source === source).map((region) => region.key);
+function sourceCoverage(body: CoverageResponse, source: string): CoverageSource {
+  const found = body.sources.find((entry) => entry.source === source);
+  expect(found).toBeDefined();
+  return found!;
+}
+
+function uniqueRegionKeys(body: CoverageResponse, source: string) {
+  return [...new Set(body.regions.filter((region) => region.source === source).map((region) => region.key))].sort();
 }
 
 integration("/v1/coverage live path", () => {
@@ -44,7 +62,9 @@ integration("/v1/coverage live path", () => {
   }, 60_000);
 
   beforeEach(async () => {
-    await client.query("TRUNCATE TABLE collection_regions CASCADE");
+    await client.query("DELETE FROM events");
+    await client.query("DELETE FROM sync_runs");
+    await client.query("DELETE FROM collection_regions");
   });
 
   afterAll(async () => {
@@ -54,48 +74,38 @@ integration("/v1/coverage live path", () => {
     await client.end();
   });
 
-  it("fails if YGO or Riftbound is still one region", async () => {
-    await registerCollectionRegions(YGO_SOURCE, [
-      { key: "US:IL", label: "United States — IL", countryCode: "US", config: { stateCode: "IL" } },
-      { key: "US:CA", label: "United States — CA", countryCode: "US", config: { stateCode: "CA" } },
-      { key: "US:NY", label: "United States — NY", countryCode: "US", config: { stateCode: "NY" } },
-    ], client);
-    await registerCollectionRegions(RIFTBOUND_SOURCE, [
-      { key: "us-il-chicago", label: "Chicago", countryCode: "US", config: { latitude: 41.8781, longitude: -87.6298, radiusMiles: 100 } },
-      { key: "us-ca-la", label: "Los Angeles", countryCode: "US", config: { latitude: 34.0522, longitude: -118.2437, radiusMiles: 100 } },
-      { key: "us-ny-nyc", label: "New York", countryCode: "US", config: { latitude: 40.7128, longitude: -74.006, radiusMiles: 100 } },
-    ], client);
+  it("fails if YGO or Riftbound coverage is still one region", async () => {
+    await registerCollectionRegions(YGO, nationalYgo, client);
+    await registerCollectionRegions(RIFTBOUND, nationalRiftbound, client);
 
-    const response = await app.inject({ method: "GET", url: "/v1/coverage" });
+    const response = await getCoverage();
     expect(response.statusCode).toBe(200);
     const body = response.json() as CoverageResponse;
 
-    const ygo = sourceCoverage(body, YGO_SOURCE);
-    const riftbound = sourceCoverage(body, RIFTBOUND_SOURCE);
-    expect(ygo).toBeDefined();
-    expect(riftbound).toBeDefined();
-    expect(ygo!.totalRegions).toBeGreaterThan(1);
-    expect(ygo!.enabledRegions).toBeGreaterThan(1);
-    expect(riftbound!.totalRegions).toBeGreaterThan(1);
-    expect(riftbound!.enabledRegions).toBeGreaterThan(1);
-    expect(regionKeys(body, YGO_SOURCE)).not.toEqual(["US:IL"]);
-    expect(new Set(regionKeys(body, YGO_SOURCE)).size).toBeGreaterThan(1);
-    expect(new Set(regionKeys(body, RIFTBOUND_SOURCE)).size).toBeGreaterThan(1);
+    for (const source of [YGO, RIFTBOUND]) {
+      const coverage = sourceCoverage(body, source);
+      expect(coverage.totalRegions).toBeGreaterThan(1);
+      expect(coverage.enabledRegions).toBeGreaterThan(1);
+    }
+
+    expect(uniqueRegionKeys(body, YGO)).not.toEqual(["US:IL"]);
+    expect(uniqueRegionKeys(body, RIFTBOUND)).not.toEqual(["us-il-chicago"]);
   });
 
-  it("reports the one-region shape the lock forbids", async () => {
-    await registerCollectionRegions(YGO_SOURCE, [
-      { key: "US:IL", label: "United States — IL", countryCode: "US", config: { stateCode: "IL" } },
-    ], client);
-    await registerCollectionRegions(RIFTBOUND_SOURCE, [
-      { key: "us-il-chicago", label: "Chicago", countryCode: "US", config: { latitude: 41.8781, longitude: -87.6298, radiusMiles: 100 } },
-    ], client);
+  it("documents the one-region shape the lock test forbids", async () => {
+    await registerCollectionRegions(YGO, [nationalYgo[0]], client);
+    await registerCollectionRegions(RIFTBOUND, [nationalRiftbound[0]], client);
 
-    const response = await app.inject({ method: "GET", url: "/v1/coverage" });
+    const response = await getCoverage();
     expect(response.statusCode).toBe(200);
     const body = response.json() as CoverageResponse;
-    expect(sourceCoverage(body, YGO_SOURCE)).toMatchObject({ totalRegions: 1, enabledRegions: 1 });
-    expect(sourceCoverage(body, RIFTBOUND_SOURCE)).toMatchObject({ totalRegions: 1, enabledRegions: 1 });
-    expect(regionKeys(body, YGO_SOURCE)).toEqual(["US:IL"]);
+
+    const ygo = sourceCoverage(body, YGO);
+    expect(ygo.totalRegions).toBe(1);
+    expect(ygo.enabledRegions).toBe(1);
+
+    const riftbound = sourceCoverage(body, RIFTBOUND);
+    expect(riftbound.totalRegions).toBe(1);
+    expect(riftbound.enabledRegions).toBe(1);
   });
 });
