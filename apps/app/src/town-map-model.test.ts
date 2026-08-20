@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { EventListItem } from "@town-map/contracts";
 import {
+  FIRST_PAINT_PLACE_ASK,
+  discoverFirstPaint,
   initialDateFilter,
   initialTab,
   matchesDate,
@@ -67,5 +69,12 @@ describe("Discover live path defaults", () => {
 describe("first load location", () => {
   it("does not auto-prompt GPS, so a denied prompt cannot become the default screen", () => {
     expect(shouldAutoLocateOnFirstLoad()).toBe(false);
+  });
+
+  it("first load without a place is the city/ZIP ask, not an empty map", () => {
+    expect(discoverFirstPaint(false)).toBe("place-ask");
+    expect(discoverFirstPaint(true)).toBe("map");
+    expect(FIRST_PAINT_PLACE_ASK.title).toMatch(/where should we look/i);
+    expect(FIRST_PAINT_PLACE_ASK.description).toMatch(/city.+ZIP/i);
   });
 });

@@ -43,6 +43,18 @@ export function shouldAutoLocateOnFirstLoad() {
   return false;
 }
 
+export type DiscoverFirstPaint = "place-ask" | "map";
+
+/** First load without a place is the city/ZIP ask. An empty map is not a first screen. */
+export function discoverFirstPaint(locationResolved: boolean): DiscoverFirstPaint {
+  return locationResolved ? "map" : "place-ask";
+}
+
+export const FIRST_PAINT_PLACE_ASK = {
+  title: "Where should we look?",
+  description: "Search a city, ZIP, or address to see tonight.",
+} as const;
+
 export function initialGames(params: URLSearchParams): Game[] | null {
   const rawGames = params.get("games");
   if (rawGames === null) return null;
