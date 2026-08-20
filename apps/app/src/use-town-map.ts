@@ -22,6 +22,7 @@ import {
 import {
   PAGE_SIZE,
   guestAuth,
+  shouldAutoLocateOnFirstLoad,
   type AppAuth,
   type Tab,
   initialGames,
@@ -120,10 +121,6 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     }
   }, [locationHook.pathname, locationHook.search, locationHook.hash, navigate, tab]);
 
-  // Kept apart rather than as one list with a date comparison at render time.
-  // The two halves are ordered in opposite directions -- next event first,
-  // most recent visit first -- and the server already decided which is which
-  // against its own clock.
   const [savedUpcoming, setSavedUpcoming] = useState<EventListItem[]>([]);
   const [savedPast, setSavedPast] = useState<EventListItem[]>([]);
   const [savedStatus, setSavedStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -136,16 +133,12 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     () => events.find((candidate) => candidate.id === expandedEventId) ?? savedEvents.find((candidate) => candidate.id === expandedEventId) ?? null,
     [expandedEventId, events, savedEvents],
   );
-  // Saving is an account feature, so there is nothing to write to until Clerk has
-  // both loaded and reported somebody signed in.
   const canSave = auth.enabled && auth.loaded && auth.signedIn;
   const savedIds = useMemo(() => new Set(savedEvents.map((event) => event.id)), [savedEvents]);
 
   useEffect(() => {
     if (!auth.enabled || !auth.loaded) return;
     if (!auth.signedIn) {
-      // Signing out has to clear the list rather than leave the previous
-      // account's saves on screen for the next person to use this browser.
       setSavedUpcoming([]);
       setSavedPast([]);
       setSavedStatus("idle");
@@ -167,11 +160,6 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     return () => controller.abort();
   }, [auth.enabled, auth.getToken, auth.loaded, auth.signedIn, savedReloadKey]);
 
-  /**
-   * Applied locally before the request is sent. The icon is the only feedback a
-   * save has, and waiting a round trip to move it reads as a dropped tap; a
-   * failure puts the previous list back and says so.
-   */
   const toggleSaved = useCallback(async (eventId: string) => {
     if (!canSave) return;
     const previousUpcoming = savedUpcoming;
@@ -182,12 +170,9 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     if (!event) return;
     setSavedNotice(null);
     if (wasSaved) {
-      // Removal is tried against both lists: taking an event back out of your
-      // history is the only way to correct one you saved but never went to.
       setSavedUpcoming(previousUpcoming.filter((candidate) => candidate.id !== eventId));
       setSavedPast(previousPast.filter((candidate) => candidate.id !== eventId));
     } else {
-      // Only Discover offers a save, and Discover serves nothing in the past.
       setSavedUpcoming(sortEvents([...previousUpcoming, event]));
     }
     try {
@@ -314,8 +299,6 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     setHighlightedEventId(null);
   }, [dateFilter, priceFilter, radiusMiles, selectedGames]);
 
-  // The date and price filters are derived from data already on screen; the
-  // location and radius are what the API request itself is scoped to.
   const visibleEvents = useMemo(() => {
     const filtered = events.filter((event) =>
       (selectedGames.length === 0 || selectedGames.includes(event.game)) &&
@@ -397,6 +380,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     if (auth.signedIn && !preferencesReady) return;
     if (urlHasLocation || autoLocatedRef.current || locationResolved) return;
     if (auth.signedIn && homeAddress) return;
+    if (!shouldAutoLocateOnFirstLoad()) return;
     autoLocatedRef.current = true;
     void useCurrentLocation();
   }, [auth.enabled, auth.loaded, auth.signedIn, homeAddress, locationResolved, preferencesReady, urlHasLocation, useCurrentLocation]);
@@ -441,8 +425,6 @@ export function useTownMap(auth: AppAuth = guestAuth) {
       setOnboardingCompleted(preferences.onboardingCompleted);
       setPreferenceStatus("saved");
     } catch (error) {
-      // Logged as well as shown: the surfaced text is deliberately short, and
-      // the underlying error is what makes a failure diagnosable at all.
       console.error("Saving preferences failed", error);
       setPreferenceStatus("error");
       setHomeNotice(error instanceof Error && error.message
