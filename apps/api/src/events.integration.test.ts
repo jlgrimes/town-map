@@ -126,26 +126,28 @@ integration("/v1/events live path", () => {
     await createLocatedEvent("magic", "chi-standard", CHICAGO.latitude, CHICAGO.longitude, "Friday Night Magic Standard", "Constructed");
     await createLocatedEvent("magic", "chi-modern", CHICAGO.latitude, CHICAGO.longitude, "Modern FNM", "Constructed");
     await createLocatedEvent("magic", "chi-pioneer", CHICAGO.latitude, CHICAGO.longitude, "Pioneer Challenge", "Constructed");
-    await createLocatedEvent("magic", "chi-draft", CHICAGO.latitude, CHICAGO.longitude, "Friday Night Magic", "Booster Draft");
-    await createLocatedEvent("magic", "chi-sealed", CHICAGO.latitude, CHICAGO.longitude, "Prerelease", "Sealed Deck");
-    await createLocatedEvent("magic", "chi-constructed", CHICAGO.latitude, CHICAGO.longitude, "Friday Night Magic", "Constructed");
-    await createLocatedEvent("magic", "sf-standard", SAN_FRANCISCO.latitude, SAN_FRANCISCO.longitude, "Friday Night Magic Standard", "Constructed");
+    await createLocatedEvent("magic", "chi-draft", CHICAGO.latitude, CHICAGO.longitude, "Chicago Draft Night", "Booster Draft");
+    await createLocatedEvent("magic", "chi-sealed", CHICAGO.latitude, CHICAGO.longitude, "Chicago Prerelease", "Sealed Deck");
+    await createLocatedEvent("magic", "chi-constructed", CHICAGO.latitude, CHICAGO.longitude, "Chicago FNM", "Constructed");
+    await createLocatedEvent("magic", "chi-commander", CHICAGO.latitude, CHICAGO.longitude, "Commander Night", "Commander");
+    await createLocatedEvent("magic", "sf-standard", SAN_FRANCISCO.latitude, SAN_FRANCISCO.longitude, "SF Standard Night", "Constructed");
 
     const response = await listEvents(chicagoMagicQuery());
     expect(response.statusCode).toBe(200);
     const body = response.json() as { events: Array<{ title: string; format: string | null }>; nextCursor: string | null };
     expect(body.nextCursor).toBeNull();
-    expect(body.events.map((event) => event.title)).not.toContain("Friday Night Magic Standard"); // wait, Chicago one should be there
 
     const byTitle = Object.fromEntries(body.events.map((event) => [event.title, event.format]));
     expect(byTitle["Friday Night Magic Standard"]).toBe("Standard");
     expect(byTitle["Modern FNM"]).toBe("Modern");
     expect(byTitle["Pioneer Challenge"]).toBe("Pioneer");
-    expect(byTitle["Friday Night Magic"]).toBeNull();
-    expect(byTitle["Prerelease"]).toBe("Sealed");
+    expect(byTitle["Chicago Draft Night"]).toBe("Draft");
+    expect(byTitle["Chicago Prerelease"]).toBe("Sealed");
+    expect(byTitle["Chicago FNM"]).toBeNull();
+    expect(byTitle["Commander Night"]).toBe("Commander");
+    expect(byTitle["SF Standard Night"]).toBeUndefined();
     expect(body.events.some((event) => event.format === "Constructed")).toBe(false);
     expect(body.events.some((event) => event.format === "Booster Draft")).toBe(false);
     expect(body.events.some((event) => event.format === "Sealed Deck")).toBe(false);
-    expect(body.events.map((event) => event.title)).not.toContain("SF Standard");
   });
 });
