@@ -1,5 +1,5 @@
 import { Geolocation } from "@capacitor/geolocation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import type { EventListItem, Game } from "@town-map/contracts";
 import {
@@ -265,9 +265,11 @@ export function useTownMap(auth: AppAuth = guestAuth) {
       (auth.enabled && (!auth.loaded || (auth.signedIn && !preferencesReady)))
       || locationStatus === "searching"
       || locationStatus === "locating"
-      || !locationResolved
     ) {
       setStatus("loading");
+      return;
+    }
+    if (!locationResolved) {
       return;
     }
     const controller = new AbortController();
@@ -390,16 +392,6 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     }
   }, []);
 
-  const autoLocatedRef = useRef(false);
-
-  useEffect(() => {
-    if (auth.enabled && !auth.loaded) return;
-    if (auth.signedIn && !preferencesReady) return;
-    if (urlHasLocation || autoLocatedRef.current || locationResolved) return;
-    if (auth.signedIn && homeAddress) return;
-    autoLocatedRef.current = true;
-    void useCurrentLocation();
-  }, [auth.enabled, auth.loaded, auth.signedIn, homeAddress, locationResolved, preferencesReady, urlHasLocation, useCurrentLocation]);
 
   const resetToSavedHome = useCallback(async () => {
     if (!homeAddress) return;
@@ -500,9 +492,9 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     onClick: () => setReloadKey((value) => value + 1),
   } : !locationResolved ? {
     title: "Where should we look?",
-    description: "Use your location or search a city, ZIP, or address.",
-    action: "Use my location",
-    onClick: () => { void useCurrentLocation(); },
+    description: "Search a city, ZIP, or address to see tonight.",
+    action: "Search a city",
+    onClick: () => { document.getElementById("place-search")?.focus(); },
   } : {
     title: "Nothing tonight nearby",
     description: `Try a wider distance or another date near ${locationLabel || "you"}.`,
