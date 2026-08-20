@@ -23,7 +23,6 @@ import {
   formatChipsForEvents,
   initialFormat,
   magicIsOn,
-  matchesFormat,
   type FormatFilter,
 } from "@/components/filters/format-pills";
 import {
@@ -38,7 +37,6 @@ import {
   initialNumber,
   sortEvents,
   groupEventsByDate,
-  matchesDate,
   matchesPrice,
 } from "./town-map-model";
 
@@ -306,7 +304,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
   useEffect(() => {
     const params = new URLSearchParams();
     if (selectedGames.length > 0) params.set("games", selectedGames.join(","));
-    if (dateFilter !== "today") params.set("date", dateFilter);
+    if (dateFilter !== "all") params.set("date", dateFilter);
     if (priceFilter !== "all") params.set("price", priceFilter);
     if (formatFilter !== "all") params.set("format", formatFilter);
     if (locationResolved) {
@@ -327,9 +325,9 @@ export function useTownMap(auth: AppAuth = guestAuth) {
 
   const formatChips = useMemo(
     () => formatChipsForEvents(
-      events.filter((event) => event.game === "magic" && matchesDate(event, dateFilter)),
+      events.filter((event) => event.game === "magic"),
     ),
-    [dateFilter, events],
+    [events],
   );
 
   useEffect(() => {
@@ -337,16 +335,14 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     else if (formatFilter !== "all" && !formatChips.some((chip) => chip.value === formatFilter)) setFormatFilter("all");
   }, [formatChips, formatFilter, selectedGames]);
 
-  // The date and price filters are derived from data already on screen; the
-  // location and radius are what the API request itself is scoped to.
+  // Format is the DoorDash ranker, not a hard filter. Date chips live on
+  // Eventbrite home, so do not keep Tonight (today) slicing this list.
   const visibleEvents = useMemo(() => {
     const filtered = events.filter((event) =>
       (selectedGames.length === 0 || selectedGames.includes(event.game)) &&
-      matchesDate(event, dateFilter) &&
-      matchesPrice(event, priceFilter) &&
-      (formatFilter === "all" || (event.game === "magic" && matchesFormat(event.format, formatFilter, event.title))));
+      matchesPrice(event, priceFilter));
     return sortEvents(filtered);
-  }, [dateFilter, events, formatFilter, priceFilter, selectedGames]);
+  }, [events, priceFilter, selectedGames]);
 
   const defaultGames = useMemo(
     () => (auth.signedIn && accountGames.length > 0 ? accountGames : []),
@@ -455,8 +451,6 @@ export function useTownMap(auth: AppAuth = guestAuth) {
       setOnboardingCompleted(preferences.onboardingCompleted);
       setPreferenceStatus("saved");
     } catch (error) {
-      // Logged as well as shown: the surfaced text is deliberately short, and
-      // the underlying error is what makes a failure diagnosable at all.
       console.error("Saving preferences failed", error);
       setPreferenceStatus("error");
       setHomeNotice(error instanceof Error && error.message
@@ -514,14 +508,14 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     onClick: () => setReloadKey((value) => value + 1),
   } : !locationResolved ? {
     title: "Where should we look?",
-    description: "Search a city, ZIP, or address to see tonight.",
+    description: "Search a city, ZIP, or address to see events nearby.",
     action: "Search a city",
     onClick: () => { document.getElementById("place-search")?.focus(); },
   } : {
-    title: "Nothing tonight nearby",
-    description: `Try a wider distance or another date near ${locationLabel || "you"}.`,
-    action: "Show this week",
-    onClick: () => { setDateFilter("week"); },
+    title: "Nothing nearby",
+    description: `Try a wider distance or another city near ${locationLabel || "you"}.`,
+    action: "Search a city",
+    onClick: () => { document.getElementById("place-search")?.focus(); },
   };
 
   return {
