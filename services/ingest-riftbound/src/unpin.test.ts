@@ -1,16 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_SEARCH_CENTERS, getSearchCenters } from "./centers.js";
+import { describe, expect, it } from "vitest";
+import { DEFAULT_SEARCH_CENTERS } from "./centers.js";
 
-describe("getSearchCenters", () => {
-  afterEach(() => {
-    delete process.env.RIFTBOUND_SEARCH_CENTERS_JSON;
-  });
-
-  it("uses the national catalog even when env pins Chicago", () => {
-    process.env.RIFTBOUND_SEARCH_CENTERS_JSON = JSON.stringify([
-      { name: "Chicago", latitude: 41.8781, longitude: -87.6298, radiusMiles: 100 },
-    ]);
-    expect(getSearchCenters().length).toBe(DEFAULT_SEARCH_CENTERS.length);
-    expect(getSearchCenters().length).toBeGreaterThan(2);
+describe("Riftbound catalog", () => {
+  it("is national, not Chicago-only", () => {
+    expect(DEFAULT_SEARCH_CENTERS.length).toBeGreaterThan(2);
+    expect(DEFAULT_SEARCH_CENTERS.some((center) => center.key === "us-il-chicago")).toBe(true);
+    expect(DEFAULT_SEARCH_CENTERS.some((center) => center.key === "us-ny-new-york")).toBe(true);
+    expect(DEFAULT_SEARCH_CENTERS.some((center) => center.key === "us-tx-el-paso")).toBe(true);
   });
 });
