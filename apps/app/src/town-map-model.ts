@@ -55,6 +55,17 @@ export const FIRST_PAINT_PLACE_ASK = {
   description: "Search a city, ZIP, or address to see tonight.",
 } as const;
 
+export type DiscoverResultsPaint = "empty" | "map-list";
+
+/** A chosen place with no matching events is the truth empty, not a blank map. */
+export function discoverResultsPaint(args: {
+  status: "loading" | "live" | "preview" | "error";
+  visibleCount: number;
+}): DiscoverResultsPaint {
+  if (args.status === "loading") return "map-list";
+  return args.visibleCount === 0 ? "empty" : "map-list";
+}
+
 export function initialGames(params: URLSearchParams): Game[] | null {
   const rawGames = params.get("games");
   if (rawGames === null) return null;
