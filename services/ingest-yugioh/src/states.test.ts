@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { DEFAULT_STATES, parseStates } from "./states.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_STATES, getStates, parseStates } from "./states.js";
 
 describe("DEFAULT_STATES", () => {
   it("covers every state and the District of Columbia", () => {
@@ -26,6 +26,19 @@ describe("DEFAULT_STATES", () => {
   });
 });
 
+describe("getStates", () => {
+  afterEach(() => {
+    delete process.env.YUGIOH_STATES;
+  });
+
+  it("uses the full catalog even when YUGIOH_STATES pins Illinois", () => {
+    process.env.YUGIOH_STATES = "IL";
+    expect(getStates()).toHaveLength(51);
+    expect(getStates().map((state) => state.code)).toContain("CA");
+    expect(getStates().map((state) => state.code)).toContain("TX");
+  });
+});
+
 describe("parseStates", () => {
   it("accepts a list in any casing or spacing", () => {
     expect(parseStates(" il , ca ")).toEqual([{ code: "IL" }, { code: "CA" }]);
@@ -35,8 +48,6 @@ describe("parseStates", () => {
     expect(parseStates("CA,CA")).toEqual([{ code: "CA" }]);
   });
 
-  // KCGN answers an unrecognised state with an empty result rather than an
-  // error, so a typo collected nothing and reported success.
   it("rejects a code the endpoint cannot filter on", () => {
     expect(() => parseStates("CA,Illinois")).toThrow(/unknown state code\(s\): ILLINOIS/);
     expect(() => parseStates("XX")).toThrow(/unknown state code/);
