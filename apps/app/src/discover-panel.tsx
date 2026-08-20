@@ -91,6 +91,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                             value={placeQuery}
                             onChange={(event) => setPlaceQuery(event.target.value)}
                             placeholder="City, ZIP, or address"
+                            autoFocus={!locationResolved}
                             autoComplete="postal-code"
                             className="h-11 pr-11 pl-10"
                           />
@@ -179,7 +180,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                             <DotBackground className="rounded-none">
                               <Empty className="py-10 border-none">
                                 <EmptyHeader>
-                                  <EmptyMedia variant="icon"><LocateFixed /></EmptyMedia>
+                                  <EmptyMedia variant="icon"><MapPin /></EmptyMedia>
                                   <EmptyTitle>{emptyState.title}</EmptyTitle>
                                   <EmptyDescription>{emptyState.description}</EmptyDescription>
                                 </EmptyHeader>
