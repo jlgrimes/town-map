@@ -335,7 +335,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
       (selectedGames.length === 0 || selectedGames.includes(event.game)) &&
       matchesDate(event, dateFilter) &&
       matchesPrice(event, priceFilter) &&
-      (formatFilter === "all" || (event.game === "magic" && matchesFormat(event.format, formatFilter))));
+      (formatFilter === "all" || (event.game === "magic" && matchesFormat(event.format, formatFilter, event.title))));
     return sortEvents(filtered);
   }, [dateFilter, events, formatFilter, priceFilter, selectedGames]);
 
