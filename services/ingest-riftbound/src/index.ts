@@ -1,9 +1,9 @@
 import { runRegionalCollector, type RegionalCollectionDefinition } from "@town-map/ingestion";
-import { getSearchCenters, type SearchCenter } from "./centers.js";
+import { DEFAULT_SEARCH_CENTERS, type SearchCenter } from "./centers.js";
 import { collectRiftboundRegion } from "./collect.js";
 
 function regions(): RegionalCollectionDefinition<SearchCenter>[] {
-  return getSearchCenters().map((center) => ({
+  return DEFAULT_SEARCH_CENTERS.map((center) => ({
     key: center.key ?? `circle:${center.latitude.toFixed(4)}:${center.longitude.toFixed(4)}:${center.radiusMiles}`,
     label: center.name,
     countryCode: center.countryCode ?? null,

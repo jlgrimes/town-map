@@ -1,11 +1,9 @@
 /**
  * The United States subdivisions the KCGN endpoint is asked about.
  *
- * The endpoint filters by state code, so a state nobody asks about is a state
- * with no events rather than an error, and coverage is exactly this list. It
- * lives in the repository for the same reason the Magic circle catalog does:
- * where Town Map claims coverage should arrive as a diff, not as an
- * environment variable nobody reviews.
+ * Coverage is this list, not `YUGIOH_STATES`. A leftover env pin used to
+ * replace the catalog and leave production on Illinois after the git catalog
+ * went national. Stage with `COLLECTOR_REGION_ALLOWLIST` if you must shrink it.
  *
  * Non-US coverage is a different question. This endpoint is the US one, and
  * `docs/global-coverage.md` keeps other countries behind verified
@@ -22,20 +20,10 @@ const TIER_ONE = 10;
 const TIER_TWO = 20;
 const TIER_THREE = 30;
 
-/**
- * Every state and the District of Columbia, tiered by population.
- *
- * Registered disabled apart from the measured cohort, so the catalog can be
- * reviewed and its per-state yield sampled before it reaches upstream. Enable a
- * cohort with `COLLECTOR_REGION_ALLOWLIST` or `COLLECTOR_MAX_REGION_PRIORITY`.
- */
+/** Every state and the District of Columbia, tiered by population. All enabled. */
 export const DEFAULT_STATES: StateRegion[] = [
-  // Collecting today. Illinois keeps the code its stored events are filed
-  // under; California is the cohort this catalog was opened for.
   { code: "IL", priority: TIER_ONE },
   { code: "CA", priority: TIER_ONE },
-
-  // National catalog, collecting.
   ...["TX", "FL", "NY", "PA", "OH", "GA", "NC", "MI"]
     .map((code) => ({ code, priority: TIER_ONE })),
   ...["NJ", "VA", "WA", "AZ", "TN", "MA", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA"]
@@ -49,11 +37,10 @@ export const DEFAULT_STATES: StateRegion[] = [
 const KNOWN_CODES = new Set(DEFAULT_STATES.map((state) => state.code));
 
 /**
- * Reads a state override, rejecting a code the endpoint cannot filter on.
+ * Reads a state list, rejecting a code the endpoint cannot filter on.
  *
- * KCGN answers an unrecognised state with an empty result rather than an
- * error, so a typo used to register a region that reported success and
- * collected nothing for as long as it stayed configured.
+ * Kept for tests. Production coverage is `DEFAULT_STATES` even when
+ * `YUGIOH_STATES` is still set on the collector service.
  */
 export function parseStates(value: string): StateRegion[] {
   const codes = value.split(",").map((state) => state.trim().toUpperCase()).filter(Boolean);
@@ -66,6 +53,5 @@ export function parseStates(value: string): StateRegion[] {
 }
 
 export function getStates(): StateRegion[] {
-  const configured = process.env.YUGIOH_STATES;
-  return configured ? parseStates(configured) : DEFAULT_STATES;
+  return DEFAULT_STATES;
 }
