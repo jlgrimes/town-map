@@ -5,6 +5,7 @@ import {
   initialTab,
   matchesDate,
   matchesPrice,
+  shouldAutoLocateOnFirstLoad,
 } from "./town-map-model";
 
 function event(overrides: Partial<EventListItem> = {}): EventListItem {
@@ -60,5 +61,11 @@ describe("Discover live path defaults", () => {
   it("does not treat a missing price as free", () => {
     expect(matchesPrice(event({ priceAmount: null }), "free")).toBe(false);
     expect(matchesPrice(event({ priceAmount: 0 }), "free")).toBe(true);
+  });
+});
+
+describe("first load location", () => {
+  it("does not auto-prompt GPS, so a denied prompt cannot become the default screen", () => {
+    expect(shouldAutoLocateOnFirstLoad()).toBe(false);
   });
 });
