@@ -43,7 +43,7 @@ describe("playerFormat", () => {
   });
 
   it("does not ship Constructed as a chip", () => {
-    expect(MAGIC_FORMAT_CHIPS.some((chip) => chip.value === "constructed" || chip.label === "Constructed")).toBe(false);
+    expect(MAGIC_FORMAT_CHIPS.map((chip) => chip.label)).not.toContain("Constructed");
     expect(playerFormat("Constructed", "Friday Night Magic")).toBeNull();
   });
 
