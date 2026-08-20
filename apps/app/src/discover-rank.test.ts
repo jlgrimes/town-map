@@ -7,6 +7,7 @@ import {
   buildCarousels,
   cadenceFactor,
   dayPartFactor,
+  chipWindowEmptyCopy,
   defaultHomeChipFor,
   distanceFactor,
   gameFormatFactor,
@@ -85,6 +86,11 @@ describe("Eventbrite home chips", () => {
     expect(homeChipsFor(ctx({ selectedGames: ["magic"] })).map((chip) => chip.value)).toContain("for-you");
     expect(defaultHomeChipFor(ctx({ selectedGames: ["magic"] }))).toBe("for-you");
     expect(homeChipsFor(ctx({ formatFilter: "commander" })).map((chip) => chip.value)).toContain("for-you");
+  });
+
+  it("empty window copy does not name hidden For you", () => {
+    expect(chipWindowEmptyCopy(false)).toBe("Nothing in this window. Try All.");
+    expect(chipWindowEmptyCopy(true)).toBe("Nothing in this window. Try All or For you.");
   });
 });
 
