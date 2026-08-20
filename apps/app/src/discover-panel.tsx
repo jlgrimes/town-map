@@ -28,9 +28,8 @@ import {
   DEFAULT_HOME_CHIP,
   HOME_CHIPS,
   buildCarousels,
-  rankEvents,
+  rankForChip,
   registrationHref,
-  sliceByHomeChip,
   type EventCarousel,
   type HomeChip,
 } from "./discover-rank";
@@ -288,13 +287,9 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
   const [homeChip, setHomeChip] = useState<HomeChip>(DEFAULT_HOME_CHIP);
   const [mapOpen, setMapOpen] = useState(false);
   const now = useMemo(() => new Date(), [visibleEvents, homeChip]);
-  const ranked = useMemo(
-    () => rankEvents(visibleEvents, { now, selectedGames, formatFilter }),
-    [formatFilter, now, selectedGames, visibleEvents],
-  );
   const sliced = useMemo(
-    () => sliceByHomeChip(ranked, homeChip, now),
-    [homeChip, now, ranked],
+    () => rankForChip(visibleEvents, homeChip, { now, selectedGames, formatFilter }),
+    [formatFilter, homeChip, now, selectedGames, visibleEvents],
   );
   const carousels = useMemo(() => buildCarousels(sliced), [sliced]);
   const slicedMappable = sliced.filter((event) => event.venue?.latitude != null && event.venue.longitude != null);
