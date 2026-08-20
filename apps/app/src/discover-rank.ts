@@ -53,6 +53,13 @@ export function defaultHomeChipFor(prefs: PrefsContext): HomeChip {
   return hasSavedPrefs(prefs) ? "for-you" : "all";
 }
 
+/** Empty Today/weekend copy. Never names For you when that chip is hidden. */
+export function chipWindowEmptyCopy(forYouVisible: boolean): string {
+  return forYouVisible
+    ? "Nothing in this window. Try All or For you."
+    : "Nothing in this window. Try All.";
+}
+
 export type EventCarousel = {
   key: "for-you" | "starting-soon" | "nearby" | "repeats-weekly";
   heading: (typeof CAROUSEL_HEADINGS)[number];
