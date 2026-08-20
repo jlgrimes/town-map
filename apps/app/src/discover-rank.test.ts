@@ -7,8 +7,11 @@ import {
   buildCarousels,
   cadenceFactor,
   dayPartFactor,
+  defaultHomeChipFor,
   distanceFactor,
   gameFormatFactor,
+  hasSavedPrefs,
+  homeChipsFor,
   rankEvents,
   rankForChip,
   registrationHref,
@@ -59,7 +62,7 @@ function ctx(overrides: Partial<RankContext> = {}): RankContext {
 }
 
 describe("Eventbrite home chips", () => {
-  it("is All / For you / Today / This weekend, defaulting to For you", () => {
+  it("is All / For you / Today / This weekend in the catalog", () => {
     expect(HOME_CHIPS.map((chip) => chip.label)).toEqual([
       "All",
       "For you",
@@ -67,6 +70,21 @@ describe("Eventbrite home chips", () => {
       "This weekend",
     ]);
     expect(DEFAULT_HOME_CHIP).toBe("for-you");
+  });
+
+  it("hides For you when nothing is saved — not a clone of All", () => {
+    const empty = ctx();
+    expect(hasSavedPrefs(empty)).toBe(false);
+    expect(homeChipsFor(empty).map((chip) => chip.value)).toEqual(["all", "today", "this-weekend"]);
+    expect(homeChipsFor(empty).some((chip) => chip.value === "for-you")).toBe(false);
+    expect(defaultHomeChipFor(empty)).toBe("all");
+  });
+
+  it("shows For you when games or formats are saved", () => {
+    expect(hasSavedPrefs(ctx({ selectedGames: ["magic"] }))).toBe(true);
+    expect(homeChipsFor(ctx({ selectedGames: ["magic"] })).map((chip) => chip.value)).toContain("for-you");
+    expect(defaultHomeChipFor(ctx({ selectedGames: ["magic"] }))).toBe("for-you");
+    expect(homeChipsFor(ctx({ formatFilter: "commander" })).map((chip) => chip.value)).toContain("for-you");
   });
 });
 
@@ -232,10 +250,12 @@ describe("All is not For you", () => {
     expect(forYouIds[0]).toBe("commander");
   });
 
-  it("All and For you match when nothing is saved", () => {
-    expect(rankForChip([savedMagic, otherYgo], "all", ctx()).map((row) => row.id)).toEqual(
-      rankForChip([savedMagic, otherYgo], "for-you", ctx()).map((row) => row.id),
-    );
+  it("fails if empty prefs still serve For you as a clone of All", () => {
+    const empty = ctx();
+    expect(homeChipsFor(empty).map((chip) => chip.value)).not.toContain("for-you");
+    expect(
+      buildCarousels(rankForChip([savedMagic, otherYgo], "all", empty), { forYou: false }).map((row) => row.heading),
+    ).not.toContain("For you");
   });
 
   it("documents the one ranked list All === For you shape the lock forbids", () => {
@@ -299,6 +319,15 @@ describe("carousels", () => {
     });
     const headings = buildCarousels([only]).map((row) => row.heading);
     expect(headings).toEqual(["For you", "Starting soon", "Nearby", "Repeats weekly"]);
+  });
+
+  it("hides the For you row when it would be a clone of All", () => {
+    const only = event({
+      id: "only",
+      distanceMiles: 1,
+      startsAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+    });
+    expect(buildCarousels([only], { forYou: false }).map((row) => row.heading)).not.toContain("For you");
   });
 });
 

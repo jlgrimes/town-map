@@ -25,9 +25,9 @@ import type { GameCatalog } from "./games";
 import { LoadingCards } from "./account-chrome";
 import { FIRST_PAINT_PLACE_ASK, discoverFirstPaint, discoverResultsPaint } from "./town-map-model";
 import {
-  DEFAULT_HOME_CHIP,
-  HOME_CHIPS,
   buildCarousels,
+  defaultHomeChipFor,
+  homeChipsFor,
   rankForChip,
   registrationHref,
   type EventCarousel,
@@ -167,17 +167,19 @@ function SavedHomeButton({
 function HomeChips({
   selected,
   onChange,
+  chips,
 }: {
   selected: HomeChip;
   onChange: (next: HomeChip) => void;
+  chips: Array<{ value: HomeChip; label: string }>;
 }) {
   return (
     <div
       className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       role="tablist"
-      aria-label="All, For you, Today, This weekend"
+      aria-label={chips.map((chip) => chip.label).join(", ")}
     >
-      {HOME_CHIPS.map((chip) => {
+      {chips.map((chip) => {
         const on = selected === chip.value;
         return (
           <button
@@ -284,14 +286,24 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
     emptyState, handleDiscoverSelect, resultsTruncated,
   } = p;
 
-  const [homeChip, setHomeChip] = useState<HomeChip>(DEFAULT_HOME_CHIP);
-  const [mapOpen, setMapOpen] = useState(false);
-  const now = useMemo(() => new Date(), [visibleEvents, homeChip]);
-  const sliced = useMemo(
-    () => rankForChip(visibleEvents, homeChip, { now, selectedGames, formatFilter }),
-    [formatFilter, homeChip, now, selectedGames, visibleEvents],
+  const visibleChips = useMemo(
+    () => homeChipsFor({ selectedGames, formatFilter }),
+    [formatFilter, selectedGames],
   );
-  const carousels = useMemo(() => buildCarousels(sliced), [sliced]);
+  const [homeChip, setHomeChip] = useState<HomeChip>(() => defaultHomeChipFor({ selectedGames, formatFilter }));
+  const resolvedChip = visibleChips.some((chip) => chip.value === homeChip)
+    ? homeChip
+    : defaultHomeChipFor({ selectedGames, formatFilter });
+  const [mapOpen, setMapOpen] = useState(false);
+  const now = useMemo(() => new Date(), [visibleEvents, resolvedChip]);
+  const sliced = useMemo(
+    () => rankForChip(visibleEvents, resolvedChip, { now, selectedGames, formatFilter }),
+    [formatFilter, now, resolvedChip, selectedGames, visibleEvents],
+  );
+  const carousels = useMemo(
+    () => buildCarousels(sliced, { forYou: resolvedChip === "for-you" }),
+    [resolvedChip, sliced],
+  );
   const slicedMappable = sliced.filter((event) => event.venue?.latitude != null && event.venue.longitude != null);
 
   const mapToggle = (
@@ -392,7 +404,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
             chips={formatChips}
           />
         )}
-        <HomeChips selected={homeChip} onChange={setHomeChip} />
+        <HomeChips selected={resolvedChip} onChange={setHomeChip} chips={visibleChips} />
         {compactForm}
         <SavedHomeButton
           authSignedIn={authSignedIn}

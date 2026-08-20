@@ -37,6 +37,22 @@ export type RankContext = {
   formatFilter: FormatFilter;
 };
 
+export type PrefsContext = Pick<RankContext, "selectedGames" | "formatFilter">;
+
+/** Empty games + All formats is not personalization. For you stays hidden. */
+export function hasSavedPrefs(prefs: PrefsContext): boolean {
+  return prefs.selectedGames.length > 0 || prefs.formatFilter !== "all";
+}
+
+export function homeChipsFor(prefs: PrefsContext) {
+  if (hasSavedPrefs(prefs)) return HOME_CHIPS;
+  return HOME_CHIPS.filter((chip) => chip.value !== "for-you");
+}
+
+export function defaultHomeChipFor(prefs: PrefsContext): HomeChip {
+  return hasSavedPrefs(prefs) ? "for-you" : "all";
+}
+
 export type EventCarousel = {
   key: "for-you" | "starting-soon" | "nearby" | "repeats-weekly";
   heading: (typeof CAROUSEL_HEADINGS)[number];
@@ -177,7 +193,10 @@ function byClosest(a: EventListItem, b: EventListItem): number {
   return a.id.localeCompare(b.id);
 }
 
-export function buildCarousels(sliced: EventListItem[]): EventCarousel[] {
+export function buildCarousels(
+  sliced: EventListItem[],
+  options: { forYou?: boolean } = {},
+): EventCarousel[] {
   const forYou = sliced.slice(0, CAROUSEL_LIMIT);
   const startingSoon = [...sliced].sort(bySoonestStart).slice(0, CAROUSEL_LIMIT);
   const nearby = [...sliced].sort(byClosest).slice(0, CAROUSEL_LIMIT);
@@ -186,7 +205,7 @@ export function buildCarousels(sliced: EventListItem[]): EventCarousel[] {
     .slice(0, CAROUSEL_LIMIT);
 
   const rows: EventCarousel[] = [
-    { key: "for-you", heading: "For you", events: forYou },
+    ...(options.forYou === false ? [] : [{ key: "for-you" as const, heading: "For you" as const, events: forYou }]),
     { key: "starting-soon", heading: "Starting soon", events: startingSoon },
     { key: "nearby", heading: "Nearby", events: nearby },
     { key: "repeats-weekly", heading: "Repeats weekly", events: weekly },
