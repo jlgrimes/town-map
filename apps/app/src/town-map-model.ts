@@ -52,7 +52,7 @@ export function discoverFirstPaint(locationResolved: boolean): DiscoverFirstPain
 
 export const FIRST_PAINT_PLACE_ASK = {
   title: "Where should we look?",
-  description: "Search a city, ZIP, or address to see tonight.",
+  description: "Search a city, ZIP, or address to see events nearby.",
 } as const;
 
 export type DiscoverResultsPaint = "empty" | "map-list";
@@ -66,6 +66,12 @@ export function discoverResultsPaint(args: {
   return args.visibleCount === 0 ? "empty" : "map-list";
 }
 
+/** Eventbrite time chips own Today/This weekend. Do not keep Tonight (today) fighting them. */
+export function discoverDateWindow(filter: DateFilter, locationResolved: boolean): DateFilter {
+  if (locationResolved && filter === "today") return "all";
+  return filter;
+}
+
 export function initialGames(params: URLSearchParams): Game[] | null {
   const rawGames = params.get("games");
   if (rawGames === null) return null;
@@ -74,7 +80,7 @@ export function initialGames(params: URLSearchParams): Game[] | null {
 
 export function initialDateFilter(params: URLSearchParams): DateFilter {
   const value = params.get("date");
-  return DATE_OPTIONS.some((option) => option.value === value) ? value as DateFilter : "today";
+  return DATE_OPTIONS.some((option) => option.value === value) ? value as DateFilter : "all";
 }
 
 export function initialPriceFilter(params: URLSearchParams): PriceFilter {
