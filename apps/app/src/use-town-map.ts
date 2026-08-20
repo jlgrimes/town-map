@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -39,6 +40,7 @@ import {
   groupEventsByDate,
   matchesPrice,
 } from "./town-map-model";
+import { readCurrentPosition } from "./locate";
 
 const initialParams = new URLSearchParams(window.location.search);
 
@@ -393,12 +395,7 @@ export function useTownMap(auth: AppAuth = guestAuth) {
     setLocationStatus("locating");
     setLocationNotice(null);
     try {
-      const permission = await Geolocation.requestPermissions();
-      if (permission.location === "denied") {
-        setLocationNotice("Enter a city or ZIP code instead.");
-        return;
-      }
-      const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 12_000 });
+      const position = await readCurrentPosition(Geolocation, Capacitor.isNativePlatform());
       setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
       setLocationLabel("Current location");
       setPlaceQuery("Current location");
