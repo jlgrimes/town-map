@@ -3,6 +3,7 @@ import type { EventListItem } from "@town-map/contracts";
 import {
   FIRST_PAINT_PLACE_ASK,
   discoverFirstPaint,
+  discoverResultsPaint,
   initialDateFilter,
   initialTab,
   matchesDate,
@@ -76,5 +77,11 @@ describe("first load location", () => {
     expect(discoverFirstPaint(true)).toBe("map");
     expect(FIRST_PAINT_PLACE_ASK.title).toMatch(/where should we look/i);
     expect(FIRST_PAINT_PLACE_ASK.description).toMatch(/city.+ZIP/i);
+  });
+  it("a chosen place with no matching events is the truth empty, not a blank map", () => {
+    expect(discoverResultsPaint({ status: "live", visibleCount: 0 })).toBe("empty");
+    expect(discoverResultsPaint({ status: "error", visibleCount: 0 })).toBe("empty");
+    expect(discoverResultsPaint({ status: "loading", visibleCount: 0 })).toBe("map-list");
+    expect(discoverResultsPaint({ status: "live", visibleCount: 3 })).toBe("map-list");
   });
 });

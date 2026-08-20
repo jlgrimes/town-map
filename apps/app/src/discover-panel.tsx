@@ -21,7 +21,7 @@ import { lazy, Suspense, type FormEvent } from "react";
 import type { EventListItem, Game } from "@town-map/contracts";
 import type { GameCatalog } from "./games";
 import { LoadingCards } from "./account-chrome";
-import { FIRST_PAINT_PLACE_ASK, PAGE_SIZE, discoverFirstPaint } from "./town-map-model";
+import { FIRST_PAINT_PLACE_ASK, PAGE_SIZE, discoverFirstPaint, discoverResultsPaint } from "./town-map-model";
 
 const EventMap = lazy(() => import("./EventMap").then((module) => ({ default: module.EventMap })));
 
@@ -244,6 +244,27 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                     )}
                   </section>
 
+                  {discoverResultsPaint({ status, visibleCount: visibleEvents.length }) === "empty" ? (
+                  <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
+                    <h2 id="events-heading" className="sr-only">Events</h2>
+                    <p className="shrink-0 pb-2 text-xs text-muted-foreground">
+                      {`${visibleEvents.length} ${visibleEvents.length === 1 ? "event" : "events"} near ${locationLabel || "you"}`}
+                      {status === "preview" ? " · preview data" : ""}
+                    </p>
+                    <DotBackground className="flex min-h-[52svh] flex-1 items-center justify-center rounded-none">
+                      <Empty className="w-full max-w-lg py-10 border-none">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
+                          <EmptyTitle className="text-lg">{emptyState.title}</EmptyTitle>
+                          <EmptyDescription>{emptyState.description}</EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent>
+                          <Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button>
+                        </EmptyContent>
+                      </Empty>
+                    </DotBackground>
+                  </section>
+                  ) : (
                   <section aria-labelledby="events-heading" className="flex min-h-0 flex-1 flex-col">
                     <h2 id="events-heading" className="sr-only">Events</h2>
                     <p className="shrink-0 pb-2 text-xs text-muted-foreground">
@@ -279,17 +300,6 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                       <div className="min-h-0 min-w-0 max-h-[42svh] overflow-y-auto overscroll-contain border-t lg:order-1 lg:max-h-none lg:border-t-0 lg:border-r">
                         {status === "loading" || locationStatus === "locating" ? (
                           <LoadingCards />
-                        ) : visibleEvents.length === 0 ? (
-                          <DotBackground className="rounded-none">
-                            <Empty className="py-10 border-none">
-                              <EmptyHeader>
-                                <EmptyMedia variant="icon">{status === "error" ? <RefreshCw /> : <Search />}</EmptyMedia>
-                                <EmptyTitle>{emptyState.title}</EmptyTitle>
-                                <EmptyDescription>{emptyState.description}</EmptyDescription>
-                              </EmptyHeader>
-                              <EmptyContent><Button className="min-h-11 px-4" variant="outline" onClick={emptyState.onClick}>{emptyState.action}</Button></EmptyContent>
-                            </Empty>
-                          </DotBackground>
                         ) : (
                           <>
                             <div className="border-b" aria-label="Event results">
@@ -342,6 +352,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
                       </div>
                     </div>
                   </section>
+                  )}
 
     </>
   );
