@@ -16,7 +16,7 @@ import { FilterBar, type FilterBarValue } from "@/components/filters/filter-bar"
 import { GamePills } from "@/components/filters/game-pills";
 import { FormatPills, magicIsOn, type FormatFilter } from "@/components/filters/format-pills";
 import { GameIcon } from "@/GameIcon";
-import { dateLabel, timeLabel } from "@/components/ui/event-row";
+import { dateLabel, eventMetadata, timeLabel } from "@/components/ui/event-row";
 import { cn } from "@/lib/utils";
 import { CircleAlert, Home, LocateFixed, MapPin, RefreshCw, Search, X } from "lucide-react";
 import { lazy, Suspense, useMemo, useState, type FormEvent, type ReactNode } from "react";
@@ -26,6 +26,7 @@ import { LoadingCards } from "./account-chrome";
 import { FIRST_PAINT_PLACE_ASK, discoverFirstPaint, discoverResultsPaint } from "./town-map-model";
 import {
   buildCarousels,
+  chipWindowEmptyCopy,
   defaultHomeChipFor,
   homeChipsFor,
   rankForChip,
@@ -210,6 +211,7 @@ function CompactEventCard({
   onOpen: (event: EventListItem) => void;
 }) {
   const miles = event.distanceMiles != null ? `${event.distanceMiles} mi` : null;
+  const format = eventMetadata(event)[0] ?? null;
   return (
     <button
       type="button"
@@ -229,6 +231,7 @@ function CompactEventCard({
       </div>
       <p className="truncate text-xs text-muted-foreground">
         {dateLabel(event.startsAt)} · {timeLabel(event.startsAt)}
+        {format ? ` · ${format}` : ""}
       </p>
       <p className="truncate text-xs text-muted-foreground">
         {event.venue?.name ?? "Venue to be announced"}
@@ -486,7 +489,7 @@ export function DiscoverPanel(p: DiscoverPanelProps) {
           {status === "loading" || locationStatus === "locating" ? (
             <LoadingCards />
           ) : carousels.length === 0 ? (
-            <p className="py-8 text-sm text-muted-foreground">Nothing in this window. Try All or For you.</p>
+            <p className="py-8 text-sm text-muted-foreground">{chipWindowEmptyCopy(visibleChips.some((chip) => chip.value === "for-you"))}</p>
           ) : (
             <div className="flex min-h-0 flex-col gap-6">
               {carousels.map((carousel) => (
