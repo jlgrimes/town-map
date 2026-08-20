@@ -85,6 +85,7 @@ export function App({ auth = guestAuth }: { auth?: AppAuth }) {
                   setSelectedGames={tm.setSelectedGames}
                   formatFilter={tm.formatFilter}
                   setFormatFilter={tm.setFormatFilter}
+                  formatChips={tm.formatChips}
                   placeQuery={tm.placeQuery}
                   setPlaceQuery={tm.setPlaceQuery}
                   searchPlace={tm.searchPlace}
